@@ -25,6 +25,8 @@ const cfg = {
   sceneSeconds: Number(process.env.CF_SCENE_SECONDS || 4.2),
   // Ken Burns zoom strength. Subtle by default so shots feel natural, not pushed in.
   zoom: Number(process.env.CF_ZOOM || 0.06),
+  // Presenter panel gets its own gentler push-in (a face jitters if pushed too hard).
+  presenterZoom: Number(process.env.CF_PRESENTER_ZOOM || 0.05),
   // Output resolution and quality. 1080p with a low CRF for crisp video.
   width: Number(process.env.CF_WIDTH || 1920),
   height: Number(process.env.CF_HEIGHT || 1080),
