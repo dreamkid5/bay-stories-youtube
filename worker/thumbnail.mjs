@@ -1,8 +1,8 @@
 // Automatic thumbnail generation.
-// Claude picks a punchy headline and a dramatic thumbnail image that matches the
-// video, then ffmpeg composites a clean, bold 1280x720 YouTube thumbnail.
-// Works without Claude too (headline derived from the title). Needs the image
-// service and ffmpeg, both of which the pipeline already uses.
+// Storytime look (matches the reference the user gave): the SAME presenter photo from
+// the video on the RIGHT, and the story's hook on the LEFT in bold Montserrat ExtraBold
+// with each clause in a punchy colour. Drawn by thumbnail.py (Pillow) — all free.
+// If Pillow/the presenter are unavailable, falls back to the older ffmpeg design.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -10,9 +10,76 @@ import { fileURLToPath } from "node:url";
 import { styleKeywords, buildPrompt } from "./csv.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-// Anton: a heavy condensed display font used on countless professional thumbnails.
-const ANTON = path.join(HERE, "assets", "fonts", "Anton-Regular.ttf");
+const FONTS_DIR = path.join(HERE, "assets", "fonts");
+const MONTSERRAT = path.join(FONTS_DIR, "Montserrat-ExtraBold.ttf");
+// Anton: a heavy condensed display font, used only by the legacy fallback.
+const ANTON = path.join(FONTS_DIR, "Anton-Regular.ttf");
 
+// The hook that goes on the thumbnail: the opening of the story, trimmed to a punchy
+// length that ends on a sentence boundary where possible.
+function makeHook(job) {
+  let t = String(job.hook || job.script || job.title || "").replace(/\s+/g, " ").trim();
+  if (!t) return "";
+  const words = t.split(" ");
+  if (words.length > 46) t = words.slice(0, 46).join(" ") + "...";
+  // prefer to end on a full sentence if one lands reasonably far in
+  const m = t.match(/^[\s\S]*?[.!?…](?=\s|$)/g);
+  if (m) {
+    let acc = "";
+    for (const s of m) {
+      const next = (acc ? acc + " " : "") + s.trim();
+      if (next.split(" ").length > 46) break;
+      acc = next;
+      if (acc.split(" ").length >= 18) break;
+    }
+    if (acc.split(" ").length >= 10) t = acc;
+  }
+  return t.trim();
+}
+
+// The reference-style thumbnail: presenter on the right, coloured hook on the left.
+async function buildStoryThumbnail(job, cfg, workDir, outFile, deps) {
+  if (!fs.existsSync(MONTSERRAT)) return null;
+
+  // Person image: reuse the video's presenter; if there isn't one, make a portrait.
+  let portrait = job.presenterFile && fs.existsSync(job.presenterFile) ? job.presenterFile : null;
+  if (!portrait) {
+    const gender = job.gender || "female";
+    const who = gender === "male"
+      ? "a friendly relatable young man in his late twenties, short neat dark hair, light stubble, plain casual modern t-shirt"
+      : "a friendly relatable young woman in her late twenties, natural shoulder-length hair, plain casual modern top";
+    const pPrompt = "cinematic photorealistic upper body portrait of " + who +
+      ", warm genuine expression, facing the camera, soft natural indoor lighting, softly blurred background, shallow depth of field, 35mm, highly detailed realistic skin and face, not an illustration";
+    const pPath = path.join(workDir, "thumb_person.jpg");
+    if (await deps.fetchImage(pPrompt, 24680, pPath, cfg, { width: 768, height: 1024 })) portrait = pPath;
+  }
+  if (!portrait) return null;
+
+  const hook = makeHook(job);
+  if (!hook) return null;
+
+  await deps.run(cfg.edgeCmd || "python3", [
+    path.join(HERE, "thumbnail.py"),
+    portrait, hook, outFile, "1280", "720", MONTSERRAT
+  ]);
+  return fs.existsSync(outFile) ? outFile : null;
+}
+
+export async function buildThumbnail(job, cfg, workDir, outFile, deps) {
+  // Preferred: the storytime reference look.
+  try {
+    const t = await buildStoryThumbnail(job, cfg, workDir, outFile, deps);
+    if (t) return t;
+  } catch (e) {
+    cfg.log && cfg.log("  thumbnail: story style failed (" + e.message + "), using fallback");
+  }
+  // Fallback: the older dramatic-image + headline design.
+  return buildLegacyThumbnail(job, cfg, workDir, outFile, deps);
+}
+
+// ---------------------------------------------------------------------------
+// Legacy fallback: a fresh dramatic image with a short bold headline.
+// ---------------------------------------------------------------------------
 function extractJSON(text) {
   if (!text) return null;
   const s = text.indexOf("{"), e = text.lastIndexOf("}");
@@ -20,7 +87,6 @@ function extractJSON(text) {
   try { return JSON.parse(text.slice(s, e + 1)); } catch (x) { return null; }
 }
 
-// Ask Claude for a headline and a thumbnail image prompt that fit the video.
 async function thumbnailPlan(job, cfg) {
   if (!cfg.anthropicKey) return null;
   const prompt =
@@ -49,8 +115,7 @@ async function thumbnailPlan(job, cfg) {
 
 function findFont(cfg) {
   const list = [
-    cfg.font,
-    ANTON,
+    cfg.font, ANTON,
     "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
     "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
     "/Library/Fonts/Arial Bold.ttf"
@@ -59,13 +124,11 @@ function findFont(cfg) {
   return null;
 }
 
-// clean to bold uppercase words, then wrap into 1 or 2 balanced lines
 function toLines(headline, title) {
   let h = (headline || "").toUpperCase().replace(/[^A-Z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
   if (!h) h = (title || "VIDEO").toUpperCase().replace(/[^A-Z0-9 ]+/g, " ").replace(/\s+/g, " ").trim().split(" ").slice(0, 4).join(" ");
   const words = h.split(" ").filter(Boolean).slice(0, 5);
   if (words.length <= 2 || h.length <= 12) return [words.join(" ")];
-  // balance into two lines by character length
   let best = 1, bestDiff = 1e9;
   for (let i = 1; i < words.length; i++) {
     const a = words.slice(0, i).join(" ").length, b = words.slice(i).join(" ").length;
@@ -74,7 +137,7 @@ function toLines(headline, title) {
   return [words.slice(0, best).join(" "), words.slice(best).join(" ")];
 }
 
-export async function buildThumbnail(job, cfg, workDir, outFile, deps) {
+async function buildLegacyThumbnail(job, cfg, workDir, outFile, deps) {
   const plan = await thumbnailPlan(job, cfg);
   const style = styleKeywords[job.style] ? job.style : cfg.style;
   const subject = (plan && plan.imagePrompt) || job.title || (job.script || "").slice(0, 120);
@@ -85,12 +148,10 @@ export async function buildThumbnail(job, cfg, workDir, outFile, deps) {
   const lines = toLines(plan && plan.headline, job.title);
   const font = findFont(cfg);
   const maxLen = Math.max(...lines.map((l) => l.length));
-  // Anton is condensed, so it carries a bigger size cleanly
   const fontsize = maxLen <= 10 ? 122 : maxLen <= 16 ? 100 : maxLen <= 22 ? 82 : 66;
   const lh = Math.round(fontsize * 1.14);
   const gradStart = 720 - (lines.length > 1 ? 340 : 240);
 
-  // Cinematic bottom gradient (transparent to dark) instead of a flat black bar.
   let fc = "[1]format=rgba,geq=r=0:g=0:b=0:a='min(235,max(0,235*(Y-" + gradStart + ")/" + (720 - gradStart) + "))'[g];";
   fc += "[0:v]scale=1280:720:force_original_aspect_ratio=increase,crop=1280:720[v];";
   fc += "[v][g]overlay=format=auto";

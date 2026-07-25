@@ -485,6 +485,7 @@ export async function renderJob(job, cfg, workDir, outFile) {
       ", warm genuine calm expression, facing the camera, soft natural indoor lighting, softly blurred cosy home background, shallow depth of field, 35mm, highly detailed realistic skin and face, not an illustration";
     const pPath = path.join(workDir, "presenter.jpg");
     if (await fetchImage(pPrompt, 24680, pPath, cfg, { width: 768, height: 1024 })) presenter = pPath;
+    if (presenter) { job.presenterFile = presenter; job.gender = gender; }
     cfg.log("  presenter: " + (presenter ? gender + " (left)" : "could not generate, using full-frame scenes"));
   }
 
