@@ -229,10 +229,23 @@ function kenBurnsVfSize(dur, cfg, idx, W, H) {
     "scale=w='" + W + "*" + z + "':h='" + H + "*" + z + "':eval=frame,crop=" + W + ":" + H + ",setsar=1";
 }
 
-// A storytime scene clip: a fixed presenter portrait on the LEFT, the scene photo on
-// the RIGHT (with gentle motion), this scene's narration, and karaoke captions burned
-// on top that highlight each word as it is spoken. presenter and assPath are optional;
-// without a presenter it falls back to a full-frame image.
+// Gentle, centred Ken Burns for the presenter panel. Softer than the story panel so a
+// face never looks jittery, and it alternates zoom direction per scene (like the story
+// panel) so the zoom level carries across hard cuts instead of popping back.
+function presenterKenBurns(dur, cfg, idx, W, H) {
+  const D = Math.max(0.1, dur);
+  const zoom = Math.min(0.12, Math.max(0, cfg.presenterZoom == null ? 0.05 : Number(cfg.presenterZoom)));
+  if (!zoom) return "scale=" + W + ":" + H + ":force_original_aspect_ratio=increase,crop=" + W + ":" + H + ",setsar=1";
+  const hi = (1 + zoom).toFixed(3);
+  const z = (idx % 2 === 0) ? "(1+" + zoom + "*t/" + D + ")" : "(" + hi + "-" + zoom + "*t/" + D + ")";
+  return "scale=" + W + ":" + H + ":force_original_aspect_ratio=increase,crop=" + W + ":" + H + "," +
+    "scale=w='" + W + "*" + z + "':h='" + H + "*" + z + "':eval=frame,crop=" + W + ":" + H + ",setsar=1";
+}
+
+// A storytime scene clip: a presenter portrait on the LEFT (with subtle camera motion),
+// the scene photo on the RIGHT (with gentle motion), this scene's narration, and karaoke
+// captions burned on top that highlight each word as it is spoken. presenter and assPath
+// are optional; without a presenter it falls back to a full-frame image.
 function sceneClipComposite(presenter, story, audioPath, assPath, outPath, dur, cfg, idx = 0) {
   const crf = String(Number(cfg.crf) || 20);
   const W = Number(cfg.width) || 1920, H = Number(cfg.height) || 1080;
@@ -250,7 +263,7 @@ function sceneClipComposite(presenter, story, audioPath, assPath, outPath, dur, 
   let filter;
   if (useComposite) {
     filter =
-      "[0:v]scale=" + Pw + ":" + H + ":force_original_aspect_ratio=increase,crop=" + Pw + ":" + H + ",setsar=1[L];" +
+      "[0:v]" + presenterKenBurns(dur, cfg, idx, Pw, H) + "[L];" +
       "[1:v]" + kenBurnsVfSize(dur, cfg, idx, Sw, H) + "[R];" +
       "[L][R]hstack=inputs=2,format=yuv420p" + subs + "[v]";
   } else {
