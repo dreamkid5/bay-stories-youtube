@@ -20,11 +20,11 @@ export async function buildCharacterBible(script, cfg) {
   if (!clean) return null;
 
   const prompt =
-    "You are the visual director for a narrated video essay on philosophy, power and human psychology, illustrated as vintage 1800s pen-and-ink engravings. Read the full script and identify the main recurring characters, the people (real historical figures, philosophers, or archetypes like 'the manipulator' or 'the ruler') who appear across multiple scenes.\n\n" +
+    "You are the visual director for a narrated first-person real-life 'storytime' video, illustrated with cinematic photorealistic photos of modern real people. Read the full script and identify the main recurring characters, the people who appear across multiple scenes (the narrator, family members, partners, friends, etc.).\n\n" +
     "For each such character give:\n" +
-    "- name: their common name.\n" +
-    "- aliases: an array of every proper name, surname, rank, or title used for them in the script (proper nouns only, never pronouns like he or she).\n" +
-    "- description: a fixed, concrete visual description an illustrator can reuse to draw them identically every time, as a figure in a vintage engraving. Include approximate age, build, hair, face, and period-appropriate clothing (classical, Renaissance, or historical) suited to the subject, plus any distinctive features. About 20 to 30 words. Do not put their name inside the description.\n\n" +
+    "- name: their common name (use 'the narrator' if the storyteller is unnamed).\n" +
+    "- aliases: an array of every proper name or title used for them in the script (proper nouns only, plus role words like mother, sister, husband if used as their label; never bare pronouns like he or she).\n" +
+    "- description: a fixed, concrete visual description a photographer can reuse to show the same present-day person every time. Include approximate age, build, hair, face, and modern everyday clothing, plus any distinctive features. About 20 to 30 words. Do not put their name inside the description.\n\n" +
     "Include at most the 4 most important recurring characters. If there are no real recurring human characters, return an empty list.\n\n" +
     "Return ONLY JSON in exactly this shape:\n" +
     '{"characters":[{"name":"...","aliases":["..."],"description":"..."}]}\n\n' +

@@ -43,18 +43,17 @@ export async function buildSceneVisuals(scenes, bible, cfg) {
     const batch = scenes.slice(start, start + BATCH);
     const numbered = batch.map((s, k) => (start + k + 1) + ". " + s).join("\n");
     const prompt =
-      "You are the visual director for a narrated video essay on philosophy, power, strategy and human psychology, in the spirit of Machiavelli and the Stoic thinkers. Every scene is illustrated as a vintage 1800s pen-and-ink engraving with dramatic, cinematic, moody lighting and Renaissance or classical antiquity settings.\n\n" +
+      "You are the visual director for a narrated first-person real-life story, the kind of dramatic personal 'storytime' video on YouTube (relationships, family, betrayal, revenge, everyday drama). Every scene is a cinematic PHOTOREALISTIC photograph of modern, present-day real people in ordinary contemporary settings.\n\n" +
       charBlock +
-      "Below are numbered narration segments. For EACH number, write ONE concrete visual image prompt describing what an illustrator should draw for that exact moment: a clear main subject, the setting, the action, and the mood, all matching the meaning of the narration. Rules:\n" +
-      "- Translate the meaning into a picture. Do NOT just repeat the narration words.\n" +
-      "- BE LITERAL AND ON-THE-NOSE. Draw the actual thing the line describes, not a generic scene of robed men. If the line mentions a specific object, animal, place or action, that exact thing MUST be the clear main subject of the image.\n" +
-      "- Metaphors and similes must be shown LITERALLY as their concrete image. Examples: 'a lion and a fox' -> draw an actual lion beside an actual fox; 'fortune is a violent river that floods' -> draw a raging, overflowing river sweeping away a village; 'chains of obligation' -> draw literal iron chains; 'fortune is a woman' -> draw a regal woman as the figure of Fortune; 'the lion and the wolves' -> draw a lion facing wolves; 'a puppet' -> draw a puppet on strings; 'a crumbling statue' -> draw a cracked, toppling statue. Never replace a stated image with a vague council of figures.\n" +
-      "- Do NOT default to 'a group of bearded robed men standing together'. Vary the subject every scene to match its specific line — a single figure, an object, an animal, a landscape, an action.\n" +
-      "- Setting & subjects: keep everything in a timeless historical/classical world — philosophers, kings, generals, soldiers, palaces, courts, studies, battlefields, statues, chessboards, masks, scales, mirrors, candlelit chambers, landscapes — but always choose the one that literally fits THIS line.\n" +
-      "- Framing: vary the shot for a cinematic feel — sweeping wide establishing scenes, medium two-person compositions of tension, and striking close-ups of a face, hand or object for dramatic emphasis.\n" +
-      "- Lighting & mood: dramatic and moody chiaroscuro, deep shadows and pools of warm candle or torch light, serious and atmospheric. Keep the main subject readable within the scene.\n" +
-      "- When a main character appears, describe them using their fixed look above.\n" +
-      "- For purely abstract or transitional lines with no concrete image of their own, pick a strong single symbolic object (a chess piece, a puppet on strings, a crumbling statue, a coiled serpent, a mask, a lone throne, an hourglass) shown clearly on its own — still literal, not a crowd of figures.\n" +
+      "Below are numbered narration segments. For EACH number, write ONE concrete visual image prompt describing the exact photo to take for that moment: a clear main subject, the setting, the action, and the emotion, all matching the meaning of the narration. Rules:\n" +
+      "- Translate the meaning into a real photo. Do NOT just repeat the narration words.\n" +
+      "- BE LITERAL. Show the actual people, place, object or action the line describes. If the line says 'she read the text message', show a woman looking at her phone with a worried face; if it says 'he packed his bags', show a man packing a suitcase.\n" +
+      "- MODERN AND REALISTIC. Everyday present-day people in contemporary clothing and settings: homes, apartments, kitchens, bedrooms, offices, cafes, cars, streets, hospitals, courtrooms. No historical, fantasy or costume imagery.\n" +
+      "- Show real human EMOTION on faces and body language — worry, tears, anger, shock, relief, joy — matching the feeling of the line.\n" +
+      "- Framing: vary the shot cinematically — wide establishing shots of a place, medium two-person shots of a confrontation or conversation, and close-ups of a face or a detail (a phone, a ring, a letter) for emotional emphasis.\n" +
+      "- Lighting & mood: natural, soft, cinematic light with shallow depth of field, a warm film look; match the mood of the moment (tense, tender, cold, hopeful).\n" +
+      "- When a main character appears, describe them using their fixed look above so the same person is recognisable across the story.\n" +
+      "- For abstract or transitional lines, choose a fitting real-world image (an empty chair, a phone screen face-down on a table, a rainy window, two wedding rings, an open door) rather than anything symbolic or old-fashioned.\n" +
       "- Never put on-screen text, captions, letters, or numbers in the image.\n" +
       "- Keep each prompt vivid but under about 40 words.\n\n" +
       "Return ONLY JSON covering every number in this batch, in this shape:\n" +

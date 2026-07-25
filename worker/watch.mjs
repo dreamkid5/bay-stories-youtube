@@ -20,7 +20,7 @@ try { process.loadEnvFile(); } catch (e) { /* no .env, that is fine */ }
 const cfg = {
   input: process.env.CF_INPUT || "./input",
   output: process.env.CF_OUTPUT || "./output",
-  style: process.env.CF_STYLE || "engraving",
+  style: process.env.CF_STYLE || "story",
   sceneSeconds: Number(process.env.CF_SCENE_SECONDS || 4.2),
   // Ken Burns zoom strength. Subtle by default so shots feel natural, not pushed in.
   zoom: Number(process.env.CF_ZOOM || 0.06),
@@ -42,9 +42,9 @@ const cfg = {
   // edge-tts: free Microsoft neural voices, NO key, NO card. Deep male narrator by default.
   // Invoked as: python3 -m edge_tts. Install once with: pip install edge-tts
   edgeCmd: process.env.CF_EDGE_CMD || "python3",
-  edgeVoice: process.env.CF_EDGE_VOICE || "en-US-BrianNeural",
-  edgeRate: process.env.CF_EDGE_RATE || "-8%",
-  edgePitch: process.env.CF_EDGE_PITCH || "-3Hz",
+  edgeVoice: process.env.CF_EDGE_VOICE || "en-US-JennyNeural",
+  edgeRate: process.env.CF_EDGE_RATE || "-5%",
+  edgePitch: process.env.CF_EDGE_PITCH || "+0Hz",
   // local voice server, free and no card
   localTtsUrl: process.env.LOCAL_TTS_URL || "",
   // premium voice providers, choose by which key is set

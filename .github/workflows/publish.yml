@@ -45,7 +45,7 @@ jobs:
       HAS_YT: ${{ secrets.YT_REFRESH_TOKEN != '' }}
       CF_INPUT: ${{ github.workspace }}/content
       CF_OUTPUT: ${{ github.workspace }}/_render
-      CF_STYLE: engraving
+      CF_STYLE: story
       # Videos over 35 min: 6s scenes at 720p. Videos 35 min and under: 4.5s at 1080p.
       CF_SCENE_SECONDS: "6"
       # Videos at or under this many minutes get 1080p + the shorter scene length.
@@ -63,9 +63,9 @@ jobs:
       CF_TIME_BUDGET_MIN: "120"
       # Voice — FREE Nigerian English via edge-tts (no key, no card)
       CF_TTS_PROVIDER: edge
-      CF_EDGE_VOICE: en-US-BrianNeural
-      CF_EDGE_RATE: "-8%"
-      CF_EDGE_PITCH: "-3Hz"
+      CF_EDGE_VOICE: en-US-JennyNeural
+      CF_EDGE_RATE: "-5%"
+      CF_EDGE_PITCH: "+0Hz"
       # Claude — character consistency + scene matching (auto-SEO disabled)
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       CF_SEO: "0"

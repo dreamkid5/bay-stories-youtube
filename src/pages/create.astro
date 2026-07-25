@@ -62,7 +62,8 @@ import Icon from "../components/Icon.astro";
           <div class="field" style="margin-bottom:12px;">
             <label>Art style</label>
             <select class="select" id="storyStyle">
-              <option value="engraving" selected>Vintage engraving (philosophy)</option>
+              <option value="story" selected>Story (photorealistic)</option>
+              <option value="engraving">Vintage engraving (philosophy)</option>
               <option value="folktale3d">African folktale (3D animated)</option>
               <option value="watercolor">Watercolor illustration</option>
               <option value="cinematic">Cinematic photo</option>
@@ -102,7 +103,8 @@ A close up of dried valerian root and a mortar"></textarea>
           <div class="field" style="margin-bottom:12px;">
             <label>Art style</label>
             <select class="select" id="sceneStyle">
-              <option value="engraving" selected>Vintage engraving (philosophy)</option>
+              <option value="story" selected>Story (photorealistic)</option>
+              <option value="engraving">Vintage engraving (philosophy)</option>
               <option value="folktale3d">African folktale (3D animated)</option>
               <option value="watercolor">Watercolor illustration</option>
               <option value="cinematic">Cinematic photo</option>
@@ -759,7 +761,8 @@ A close up of dried valerian root and a mortar"></textarea>
       synthwave: "synthwave retro futuristic, neon glow, purple and cyan, 1980s aesthetic",
       folktale: "African folktale illustration, rich earth tones, bold tribal patterns, Ndebele and Kente inspired motifs, warm ochre and indigo palette, textured, storytelling art",
       folktale3d: "3D animated feature film still in the style of a Pixar and DreamWorks African folktale, expressive stylized characters with warm dark skin and soft subsurface shading, bright warm natural daylight with soft even front lighting so the characters are clearly and fully lit and easy to see, no dark silhouettes and no heavy backlighting, vibrant and colourful, rural West African village of thatched-roof huts, acacia trees and gentle green hills under a bright blue sky, richly textured woven robes and carved wood, gentle global illumination, high detail, wholesome and heartwarming, not photorealistic, balanced natural framing, mostly wide and medium establishing shots that show the full figure and the surroundings with generous headroom, the main character well lit and clearly visible, not a tightly cropped close-up",
-      engraving: "in the style of a hand-coloured Gustave Dore and Albrecht Durer engraving, exquisite fine ink linework and intricate cross-hatching with rich hand-applied colour washes, vivid antique palette of crimson, deep blue, gold, emerald and ochre, sharp coherent faces and hands, deep dramatic chiaroscuro, aged paper, antique illustrated book plate, Renaissance and classical antiquity setting, richly detailed, not photorealistic, not a photograph, no text or words in the image"
+      engraving: "in the style of a hand-coloured Gustave Dore and Albrecht Durer engraving, exquisite fine ink linework and intricate cross-hatching with rich hand-applied colour washes, vivid antique palette of crimson, deep blue, gold, emerald and ochre, sharp coherent faces and hands, deep dramatic chiaroscuro, aged paper, antique illustrated book plate, Renaissance and classical antiquity setting, richly detailed, not photorealistic, not a photograph, no text or words in the image",
+      story: "cinematic photorealistic photograph, modern real people in everyday contemporary settings, candid emotional storytelling moment, natural soft lighting, shallow depth of field, 35mm film look, warm cinematic colour grade, highly detailed realistic faces and skin, believable and lifelike, film still, not an illustration, not a drawing, not a cartoon, no text or words in the image"
     };
     function loadSceneImage(prompt, style, seed) {
       return new Promise((resolve) => {
