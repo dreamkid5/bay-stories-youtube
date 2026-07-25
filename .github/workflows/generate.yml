@@ -61,8 +61,8 @@ jobs:
       - name: Install ffmpeg
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
 
-      - name: Install edge-tts (free Nigerian narration)
-        run: python3 -m pip install --upgrade edge-tts
+      - name: Install narration + caption deps (edge-tts, pillow)
+        run: python3 -m pip install --upgrade edge-tts pillow
 
       - name: Render folktales
         working-directory: worker

@@ -101,9 +101,9 @@ jobs:
         if: env.HAS_YT == 'true'
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
 
-      - name: Install edge-tts (free Nigerian narration)
+      - name: Install narration + caption deps (edge-tts, pillow)
         if: env.HAS_YT == 'true'
-        run: python3 -m pip install --upgrade edge-tts
+        run: python3 -m pip install --upgrade edge-tts pillow
 
       - name: Render new folktales and upload to YouTube
         if: env.HAS_YT == 'true'

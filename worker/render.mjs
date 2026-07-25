@@ -4,12 +4,21 @@
 import { spawn } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { splitScript, buildPrompt, styleKeywords, VOICES } from "./csv.mjs";
 import { buildCharacterBible, sceneCharacterNote } from "./characters.mjs";
 import { buildSceneVisuals } from "./visuals.mjs";
 import { buildThumbnail } from "./thumbnail.mjs";
+import { detectGender } from "./gender.mjs";
 
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const FONTS_DIR = path.join(HERE, "assets", "fonts");
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Escape a file path for use inside the ffmpeg subtitles filter argument.
+function ffEscapePath(p) {
+  return p.replace(/\\/g, "\\\\").replace(/:/g, "\\:").replace(/'/g, "\\'");
+}
 
 function run(cmd, args) {
   return new Promise((res, rej) => {
@@ -77,15 +86,15 @@ async function fetchTTS(script, voice, outPath, cfg) {
     if (cfg.ttsProvider === "edge") {
       const name = (voice && /^[a-z]{2}-[A-Z]{2}-/.test(voice)) ? voice : cfg.edgeVoice;
       const txt = outPath + ".txt";
+      // tts_words.py writes the mp3 AND a sidecar of per-word timings (outPath.words.json)
+      // that the caption engine uses to highlight each word as it is spoken.
+      const wordsFile = outPath + ".words.json";
       await fs.writeFile(txt, script);
       try {
         await run(cfg.edgeCmd || "python3", [
-          "-m", "edge_tts",
-          "--voice", name,
-          "--file", txt,
-          "--write-media", outPath,
-          "--rate=" + (cfg.edgeRate || "+0%"),
-          "--pitch=" + (cfg.edgePitch || "+0Hz")
+          path.join(HERE, "tts_words.py"),
+          txt, name, outPath, wordsFile,
+          (cfg.edgeRate || "+0%"), (cfg.edgePitch || "+0Hz")
         ]);
       } finally {
         await fs.rm(txt, { force: true }).catch(() => {});
@@ -207,6 +216,66 @@ function sceneClipWithAudio(imgPath, audioPath, outPath, dur, cfg, idx = 0) {
     "-map", "0:v:0", "-map", "1:a:0", "-t", String(dur), outPath
   );
   return run(cfg.ffmpeg, args);
+}
+
+// Ken Burns filter for an arbitrary panel size (used for the story panel that sits
+// beside the presenter, so it is narrower than the full frame).
+function kenBurnsVfSize(dur, cfg, idx, W, H) {
+  const D = Math.max(0.1, dur);
+  const zoom = Math.min(0.2, Math.max(0, Number(cfg.zoom) || 0.06));
+  const hi = (1 + zoom).toFixed(3);
+  const z = (idx % 2 === 0) ? "(1+" + zoom + "*t/" + D + ")" : "(" + hi + "-" + zoom + "*t/" + D + ")";
+  return "scale=" + W + ":" + H + ":force_original_aspect_ratio=increase,crop=" + W + ":" + H + "," +
+    "scale=w='" + W + "*" + z + "':h='" + H + "*" + z + "':eval=frame,crop=" + W + ":" + H + ",setsar=1";
+}
+
+// A storytime scene clip: a fixed presenter portrait on the LEFT, the scene photo on
+// the RIGHT (with gentle motion), this scene's narration, and karaoke captions burned
+// on top that highlight each word as it is spoken. presenter and assPath are optional;
+// without a presenter it falls back to a full-frame image.
+function sceneClipComposite(presenter, story, audioPath, assPath, outPath, dur, cfg, idx = 0) {
+  const crf = String(Number(cfg.crf) || 20);
+  const W = Number(cfg.width) || 1920, H = Number(cfg.height) || 1080;
+  const Pw = Math.round(W * (Number(cfg.presenterFrac) || 0.38)); // presenter panel width
+  const Sw = W - Pw;                                              // story panel width
+  const args = ["-y"];
+  const useComposite = !!presenter;
+  if (useComposite) args.push("-loop", "1", "-t", String(dur), "-i", presenter);
+  args.push("-loop", "1", "-t", String(dur), "-i", story);
+  const audioIdx = useComposite ? 2 : 1;
+  if (audioPath) args.push("-i", audioPath);
+  else args.push("-f", "lavfi", "-t", String(dur), "-i", "anullsrc=channel_layout=mono:sample_rate=24000");
+
+  const subs = assPath ? ",subtitles='" + ffEscapePath(assPath) + "':fontsdir='" + ffEscapePath(FONTS_DIR) + "'" : "";
+  let filter;
+  if (useComposite) {
+    filter =
+      "[0:v]scale=" + Pw + ":" + H + ":force_original_aspect_ratio=increase,crop=" + Pw + ":" + H + ",setsar=1[L];" +
+      "[1:v]" + kenBurnsVfSize(dur, cfg, idx, Sw, H) + "[R];" +
+      "[L][R]hstack=inputs=2,format=yuv420p" + subs + "[v]";
+  } else {
+    filter = "[1:v]" + kenBurnsVf(dur, cfg, idx) + ",format=yuv420p" + subs + "[v]";
+  }
+  args.push(
+    "-filter_complex", filter, "-map", "[v]", "-map", audioIdx + ":a:0",
+    "-r", "30", "-c:v", "libx264", "-preset", "veryfast", "-crf", crf, "-pix_fmt", "yuv420p",
+    "-c:a", "aac", "-b:a", "160k", "-ar", "24000", "-ac", "1", "-t", String(dur), outPath
+  );
+  return run(cfg.ffmpeg, args);
+}
+
+// Generate the per-scene ASS caption file from that scene's word timings.
+async function buildSceneCaptions(wordsFile, assPath, cfg) {
+  const W = Number(cfg.width) || 1920, H = Number(cfg.height) || 1080;
+  const fontSize = Math.round(H * (Number(cfg.capSizeFrac) || 0.062));
+  await run(cfg.edgeCmd || "python3", [
+    path.join(HERE, "captions.py"),
+    wordsFile, assPath, String(W), String(H),
+    path.join(FONTS_DIR, cfg.capFontFile || "Montserrat-ExtraBold.ttf"),
+    cfg.capFontName || "Montserrat ExtraBold",
+    String(fontSize), cfg.capHighlight || "#6A12C0",
+    String(Number(cfg.capMaxWords) || 4), String(Number(cfg.capYFrac) || 0.72)
+  ]);
 }
 
 // Mix looping background music UNDER a video that already has a narration track.
@@ -390,6 +459,22 @@ export async function renderJob(job, cfg, workDir, outFile) {
     cfg.log("  over " + HD_MAX_MIN + " min: rendering at 720p so it finishes safely");
   }
 
+  // Storytime mode: a fixed presenter portrait on the left of every scene, plus
+  // karaoke captions burned on. Only for the "story" style; other styles render full-frame.
+  const storyMode = style === "story" && cfg.presenter !== false;
+  let presenter = null;
+  if (storyMode) {
+    const gender = job.gender || detectGender(job.script);
+    const who = gender === "male"
+      ? "a friendly relatable young man in his late twenties, short neat dark hair, light stubble, plain casual modern t-shirt"
+      : "a friendly relatable young woman in her late twenties, natural shoulder-length hair, plain casual modern top";
+    const pPrompt = "cinematic photorealistic upper body portrait of " + who +
+      ", warm genuine calm expression, facing the camera, soft natural indoor lighting, softly blurred cosy home background, shallow depth of field, 35mm, highly detailed realistic skin and face, not an illustration";
+    const pPath = path.join(workDir, "presenter.jpg");
+    if (await fetchImage(pPrompt, 24680, pPath, cfg, { width: 768, height: 1024 })) presenter = pPath;
+    cfg.log("  presenter: " + (presenter ? gender + " (left)" : "could not generate, using full-frame scenes"));
+  }
+
   // Character bible: keep the main characters looking the same across scenes.
   let bible = null;
   if (cfg.anthropicKey && cfg.characters !== false) {
@@ -484,7 +569,8 @@ export async function renderJob(job, cfg, workDir, outFile) {
   // Build one self-contained clip per scene (its OWN image + its own narration), then
   // join. Each scene uses the image generated for it; the regeneration pass above makes
   // sure that image exists, so no scene ever borrows another scene's picture.
-  cfg.log("  rendering " + scenes.length + " scenes at " + (cfg.width || 1920) + "x" + (cfg.height || 1080));
+  cfg.log("  rendering " + scenes.length + " scenes at " + (cfg.width || 1920) + "x" + (cfg.height || 1080) +
+    (storyMode ? " (presenter + captions)" : ""));
   const clips = [];
   let total = 0;
   for (let i = 0; i < scenes.length; i++) {
@@ -492,8 +578,21 @@ export async function renderJob(job, cfg, workDir, outFile) {
     if (!img) continue; // extremely rare: this one scene could not be generated, skip it
     const c = path.join(workDir, "clip" + i + ".mp4");
     try {
-      if (haveAudio) await sceneClipWithAudio(img, audios[i], c, durs[i], cfg, i);
-      else await kenBurnsClip(img, c, durs[i], cfg, i);
+      if (storyMode) {
+        // Build this scene's captions from its own word timings, then composite
+        // presenter (left) + scene photo (right) + captions in one pass.
+        let ass = null;
+        const wf = audios[i] ? audios[i] + ".words.json" : null;
+        if (wf && await fs.stat(wf).catch(() => null)) {
+          ass = path.join(workDir, "cap" + i + ".ass");
+          try { await buildSceneCaptions(wf, ass, cfg); } catch (e) { ass = null; cfg.log("  captions skipped scene " + (i + 1) + ": " + String(e.message).slice(0, 80)); }
+        }
+        await sceneClipComposite(presenter, img, audios[i], ass, c, durs[i], cfg, i);
+      } else if (haveAudio) {
+        await sceneClipWithAudio(img, audios[i], c, durs[i], cfg, i);
+      } else {
+        await kenBurnsClip(img, c, durs[i], cfg, i);
+      }
       const st = await fs.stat(c);
       if (st.size > 1000) { clips.push(c); total += durs[i]; }
     } catch (e) {

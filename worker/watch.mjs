@@ -13,6 +13,7 @@ import { jobsFromCSV, slug } from "./csv.mjs";
 import { renderJob } from "./render.mjs";
 import { uploadToYouTube } from "./upload.mjs";
 import { generateSEO } from "./seo.mjs";
+import { detectGender, voiceForGender } from "./gender.mjs";
 
 // Load worker/.env if present, so keys live in one file.
 try { process.loadEnvFile(); } catch (e) { /* no .env, that is fine */ }
@@ -45,6 +46,9 @@ const cfg = {
   edgeVoice: process.env.CF_EDGE_VOICE || "en-US-JennyNeural",
   edgeRate: process.env.CF_EDGE_RATE || "-5%",
   edgePitch: process.env.CF_EDGE_PITCH || "+0Hz",
+  // Auto voice by story gender: female stories -> Jenny, male stories -> Brian.
+  femaleVoice: process.env.CF_FEMALE_VOICE || "en-US-JennyNeural",
+  maleVoice: process.env.CF_MALE_VOICE || "en-US-BrianNeural",
   // local voice server, free and no card
   localTtsUrl: process.env.LOCAL_TTS_URL || "",
   // premium voice providers, choose by which key is set
@@ -159,6 +163,12 @@ async function processCSV(file, processed) {
       break;
     }
     const job = jobs[i];
+    // Auto-pick the narrator voice and presenter gender from the story itself.
+    if (process.env.CF_AUTO_GENDER !== "0") {
+      job.gender = detectGender(job.script);
+      if (!job.voice) job.voice = voiceForGender(job.gender, cfg);
+      log('  story reads as ' + job.gender + ', narrator ' + job.voice);
+    }
     const base = slug(job.title) || ("video_" + (i + 1));
     const outFile = path.join(cfg.output, base + ".mp4");
     const workDir = path.join(cfg.output, ".work", base);
