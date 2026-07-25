@@ -229,12 +229,12 @@ function kenBurnsVfSize(dur, cfg, idx, W, H) {
     "scale=w='" + W + "*" + z + "':h='" + H + "*" + z + "':eval=frame,crop=" + W + ":" + H + ",setsar=1";
 }
 
-// Gentle, centred Ken Burns for the presenter panel. Softer than the story panel so a
-// face never looks jittery, and it alternates zoom direction per scene (like the story
-// panel) so the zoom level carries across hard cuts instead of popping back.
+// The presenter panel. By default it is STILL (zoom 0) — only the scene photos zoom.
+// If CF_PRESENTER_ZOOM is set it gets a gentle centred Ken Burns push-in that alternates
+// direction per scene (like the story panel) so the zoom level carries across hard cuts.
 function presenterKenBurns(dur, cfg, idx, W, H) {
   const D = Math.max(0.1, dur);
-  const zoom = Math.min(0.12, Math.max(0, cfg.presenterZoom == null ? 0.05 : Number(cfg.presenterZoom)));
+  const zoom = Math.min(0.12, Math.max(0, cfg.presenterZoom == null ? 0 : Number(cfg.presenterZoom)));
   if (!zoom) return "scale=" + W + ":" + H + ":force_original_aspect_ratio=increase,crop=" + W + ":" + H + ",setsar=1";
   const hi = (1 + zoom).toFixed(3);
   const z = (idx % 2 === 0) ? "(1+" + zoom + "*t/" + D + ")" : "(" + hi + "-" + zoom + "*t/" + D + ")";
