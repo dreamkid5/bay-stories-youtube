@@ -90,21 +90,22 @@ def main():
         for wd in widths:
             centres.append(run + wd / 2.0)
             run += wd + space_w
-        phrase_text = " ".join(texts)
         p_start, p_end = ph[0]["t"], ph[-1]["end"]
-        # white phrase text, held for the whole phrase (drawn on top)
-        text_events.append(
-            f"Dialogue: 1,{ass_time(p_start)},{ass_time(p_end)},Cap,,0,0,0,,"
-            f"{{\\an5\\pos({cx:.0f},{y})}}{phrase_text}"
-        )
-        # a highlight box behind each word for exactly its spoken slice (drawn under).
-        # Absolute frame coordinates (\an7\pos(0,0)) so it sits exactly behind the word.
-        for wd_w, c, wobj in zip(widths, centres, ph):
-            bx = cx + c
+        # Position EACH word individually at its own centre (rather than letting libass
+        # centre the whole phrase), and put its highlight box at the SAME centre, so the
+        # box and the word can never drift apart regardless of libass's own metrics.
+        for text_w, wd_w, c, wobj in zip(texts, widths, centres, ph):
+            wx = cx + c
+            # white word text, shown for the whole phrase (drawn on top)
+            text_events.append(
+                f"Dialogue: 1,{ass_time(p_start)},{ass_time(p_end)},Cap,,0,0,0,,"
+                f"{{\\an5\\pos({wx:.0f},{y})}}{text_w}"
+            )
+            # highlight box behind that word, only while it is being spoken (drawn under)
             hw = wd_w / 2.0 + font_size * 0.28
             hh = line_h / 2.0 + font_size * 0.10
-            r = font_size * 0.22  # corner radius
-            draw = rounded_rect_abs(bx, y, hw, hh, r)
+            r = font_size * 0.22
+            draw = rounded_rect_abs(wx, y, hw, hh, r)
             box_events.append(
                 f"Dialogue: 0,{ass_time(wobj['t'])},{ass_time(wobj['end'])},Box,,0,0,0,,"
                 f"{{\\an7\\pos(0,0)\\p1\\1c{hi}\\bord0\\shad0}}{draw}{{\\p0}}"
