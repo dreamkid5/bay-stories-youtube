@@ -32,7 +32,7 @@ cp .env.example .env
 ```
 Open `.env`, paste your Azure key into `AZURE_SPEECH_KEY`, and set `AZURE_SPEECH_REGION` to your region such as `eastus`. Now you never type the key again, the worker reads this file.
 
-Each time you want videos, put them in one file named exactly `input/pending.csv`. One row per video: `title, script, style, voice, music`. For an Azure voice, use a name in the voice column such as `en-US-GuyNeural` (US male), `en-GB-RyanNeural` (UK male), or `en-US-JennyNeural` (US female). Start from the template:
+Each time you want videos, put them in one file named exactly `input/pending.csv`. One row per video: `title, script, style, voice, music`. The channel voice is `en-US-BrianNeural`; other male Azure voices include `en-US-GuyNeural` and `en-GB-RyanNeural`. Start from the template:
 ```
 cp sample-videos.csv input/pending.csv
 ```

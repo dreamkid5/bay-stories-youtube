@@ -39,7 +39,8 @@ Goes into `.env` as `AZURE_SPEECH_KEY` and `AZURE_SPEECH_REGION`.
 6. Copy **KEY 1**, and note the **Location/Region**, for example `eastus`.
 7. In `.env`, set `AZURE_SPEECH_KEY=` to KEY 1, and `AZURE_SPEECH_REGION=` to the region.
 
-Voice names to try in the CSV voice column: `en-US-GuyNeural`, `en-GB-RyanNeural`, `en-US-JennyNeural`.
+Male voice names to try in the CSV voice column: `en-US-BrianNeural`, `en-US-GuyNeural`,
+or `en-GB-RyanNeural`.
 
 ---
 

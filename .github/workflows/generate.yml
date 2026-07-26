@@ -3,7 +3,7 @@ name: Generate folktale videos (download only)
 # Use this to MAKE videos on GitHub without publishing to YouTube.
 #   Actions tab → "Generate folktale videos (download only)" → Run workflow.
 # It renders every script in content/ into a narrated, illustrated MP4 (free
-# Nigerian voice + 3D folktale look) and attaches the videos as a downloadable
+# male Brian voice + Storytime look) and attaches the videos as a downloadable
 # artifact. Nothing is uploaded to YouTube and no scripts are archived, so you
 # can tweak a script and generate again.
 #
@@ -35,9 +35,9 @@ jobs:
       CF_MAX_SCENES: "600"
       # Do not START another video after 2h, so even a slow one lands well under the 6h wall.
       CF_TIME_BUDGET_MIN: "120"
-      # Free Nigerian narration
+      # Free male Storytime narration
       CF_TTS_PROVIDER: edge
-      CF_EDGE_VOICE: en-US-JennyNeural
+      CF_EDGE_VOICE: en-US-BrianNeural
       CF_EDGE_RATE: "-5%"
       CF_EDGE_PITCH: "+0Hz"
       # Generate only: do not upload, do not archive

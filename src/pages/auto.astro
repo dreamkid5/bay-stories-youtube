@@ -10,23 +10,14 @@ const premiumVoices = {
     { v: "VR6AewLTigWG4xSOukaG", l: "Arnold, documentary US male" },
     { v: "pNInz6obpgDQGcFmaJgB", l: "Adam, deep US male" },
     { v: "ErXwobaYiN019PkySvjV", l: "Antoni, warm US male" },
-    { v: "21m00Tcm4TlvDq8ikWAM", l: "Rachel, US female" },
-    { v: "EXAVITQu4vr4xnSDxMaL", l: "Bella, US female" },
     { v: "TxGEqnHWrfWFTfGW9XjX", l: "Josh, US male" }
   ],
   google: [
     { v: "en-US-Neural2-J", l: "US male, documentary" },
     { v: "en-GB-Neural2-B", l: "UK male" },
-    { v: "en-US-Studio-O", l: "US female, studio" },
-    { v: "en-US-Neural2-D", l: "US male, deep" },
-    { v: "en-GB-Neural2-A", l: "UK female" },
-    { v: "en-US-Neural2-F", l: "US female" }
+    { v: "en-US-Neural2-D", l: "US male, deep" }
   ],
   azure: [
-    { v: "en-KE-AsiliaNeural", l: "Asilia, Kenyan female" },
-    { v: "en-ZA-LeahNeural", l: "Leah, South African female" },
-    { v: "en-GB-SoniaNeural", l: "Sonia, UK female" },
-    { v: "en-US-JennyNeural", l: "Jenny, US female" },
     { v: "en-US-BrianNeural", l: "Brian, US male" }
   ]
 };
@@ -101,19 +92,8 @@ const premiumLabel = premiumProvider === "local" ? "Narrator, free local voice" 
           <div class="field" id="voicePanel" style="margin-bottom:0;">
             <label>Free narrator voice (no key)</label>
             <select class="select" id="voiceSel">
-              <optgroup label="Storytime voices — free, natural">
-                <option value="edge:en-US-JennyNeural" selected>Jenny, US female (storytime)</option>
-                <option value="edge:en-US-AriaNeural">Aria, US female</option>
-                <option value="edge:en-US-MichelleNeural">Michelle, US female, warm</option>
-                <option value="edge:en-US-AnaNeural">Ana, US female, youthful</option>
-                <option value="edge:en-US-GuyNeural">Guy, US male</option>
-                <option value="edge:en-US-BrianNeural">Brian, deep male narrator</option>
-              </optgroup>
-              <optgroup label="On-device voices (US/UK)">
-                <option value="af_heart">Aria, warm US female</option>
-                <option value="bf_emma">Emma, UK female</option>
-                <option value="am_michael">Michael, calm US male</option>
-                <option value="bm_george">George, UK documentary</option>
+              <optgroup label="Channel voice — free, natural">
+                <option value="edge:en-US-BrianNeural" selected>Brian, deep male narrator</option>
               </optgroup>
             </select>
           </div>
@@ -349,7 +329,7 @@ const premiumLabel = premiumProvider === "local" ? "Narrator, free local voice" 
           body: JSON.stringify({ text: text, voice: name, rate: "-6%", pitch: "-2Hz" })
         });
         const ct = r.headers.get("content-type") || "";
-        if (!r.ok || ct.indexOf("audio") < 0) throw new Error("Nigerian voice unavailable, retrying");
+        if (!r.ok || ct.indexOf("audio") < 0) throw new Error("Storytime voice unavailable, retrying");
         if (onProg) onProg(100);
         return await r.blob();
       }

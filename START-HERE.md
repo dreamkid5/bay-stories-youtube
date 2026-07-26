@@ -1,7 +1,7 @@
 # Start here — Griot Studio in plain English
 
 Griot Studio turns a **written folktale** into a **finished YouTube video** — narrated in a
-Nigerian voice, illustrated in a 3D animated folktale look, with a title, description, tags,
+male Storytime voice, illustrated in a 3D animated folktale look, with a title, description, tags,
 and a thumbnail — and (once your channel is connected) uploads it for you.
 
 You do one thing: **write a tale and save it in the `content/` folder on GitHub.** The robot
@@ -56,8 +56,8 @@ That's it. Repeat with as many tales as you like.
 
 These are already set to sensible defaults, so you can ignore them:
 
-- **Voice:** free Storytime pair. Female-led scripts use `en-US-JennyNeural`; male-led scripts
-  use `en-US-BrianNeural`. The worker chooses automatically from the script.
+- **Voice:** free male Storytime narrator (`en-US-BrianNeural`) for every script. Every
+  video generates a different male presenter portrait for the left side.
 - **Look:** 3D animated African folktale (`folktale3d`).
 - **Scene length:** about 6 seconds.
 
@@ -66,14 +66,14 @@ These are already set to sensible defaults, so you can ignore them:
 ## The website
 
 You also have a live dashboard and studio at **https://griot-studio.pages.dev** where you can
-preview art styles and hear the Nigerian voice (Auto Video page). The website is for
+preview art styles and hear the male Storytime voice (Auto Video page). The website is for
 experimenting; the **actual publishing is done by GitHub** as described above.
 
 ---
 
 ## What it costs
 
-Essentially **$0**: free images, free Nigerian voice, free YouTube upload. The only tiny cost
+Essentially **$0**: free images, free male Storytime voice, free YouTube upload. The only tiny cost
 is the AI that writes your titles/descriptions (about a cent per video), and only if you keep
 that turned on.
 

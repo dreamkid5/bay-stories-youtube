@@ -2,7 +2,7 @@ name: Publish folktales to YouTube
 
 # How it works:
 #   1. You write a folktale as a plain .txt file in the content/ folder and push it.
-#   2. This workflow renders it into a narrated, illustrated video (Nigerian voice,
+#   2. This workflow renders it into a narrated, illustrated video (male Brian voice,
 #      3D folktale look), writes the SEO with Claude, and uploads it to YouTube.
 #   3. The published script is moved to content/published/ and the upload ledger
 #      (content/.cf-uploaded.json) is committed back, so a tale is never made twice.
@@ -61,9 +61,9 @@ jobs:
       CF_MAX_SCENES: "600"
       # Do not START another video after 2h, so even a slow one lands well under the 6h wall.
       CF_TIME_BUDGET_MIN: "120"
-      # Voice — FREE Nigerian English via edge-tts (no key, no card)
+      # Voice — free male Storytime narration via edge-tts (no key, no card)
       CF_TTS_PROVIDER: edge
-      CF_EDGE_VOICE: en-US-JennyNeural
+      CF_EDGE_VOICE: en-US-BrianNeural
       CF_EDGE_RATE: "-5%"
       CF_EDGE_PITCH: "+0Hz"
       # Claude — character consistency + scene matching (auto-SEO disabled)

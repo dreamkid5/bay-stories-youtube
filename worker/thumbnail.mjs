@@ -46,10 +46,7 @@ async function buildStoryThumbnail(job, cfg, workDir, outFile, deps) {
   // Person image: reuse the video's presenter; if there isn't one, make a portrait.
   let portrait = job.presenterFile && fs.existsSync(job.presenterFile) ? job.presenterFile : null;
   if (!portrait) {
-    const gender = job.gender || "female";
-    const who = gender === "male"
-      ? "a friendly relatable young man in his late twenties, short neat dark hair, light stubble, plain casual modern t-shirt"
-      : "a friendly relatable young woman in her late twenties, natural shoulder-length hair, plain casual modern top";
+    const who = "a friendly relatable young man in his late twenties, short neat dark hair, light stubble, plain casual modern t-shirt";
     const pPrompt = "cinematic photorealistic upper body portrait of " + who +
       ", warm genuine expression, facing the camera, soft natural indoor lighting, softly blurred background, shallow depth of field, 35mm, highly detailed realistic skin and face, not an illustration";
     const pPath = path.join(workDir, "thumb_person.jpg");

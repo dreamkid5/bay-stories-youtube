@@ -37,14 +37,13 @@ description you can paste into any script:
 
 ## Voice
 
-Narration uses the free Storytime neural voice pair via `edge-tts`: `en-US-JennyNeural`
-for female-led stories and `en-US-BrianNeural` for male-led stories. The worker selects the
-voice automatically from the script and delivers it at a warm, measured storytelling cadence.
-No key or cost. See `worker/SETUP-VOICE.md`.
+Narration uses the free male Storytime neural voice `en-US-BrianNeural` via `edge-tts` for
+every story, delivered at a warm, measured storytelling cadence. No key or cost. See
+`worker/SETUP-VOICE.md`.
 
 ## Storytime presenter
 
-Each video generates its own narrator portrait for the left side of the Storytime layout.
-That presenter stays identical throughout that one video and is reused on its thumbnail, but
-a different script generates a different presenter so separate uploads do not all show the
-same person.
+Each video generates its own male narrator portrait for the left side of the Storytime
+layout. That presenter stays identical throughout that one video and is reused on its
+thumbnail, but a different script generates a different male presenter so separate uploads
+do not all show the same person.

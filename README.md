@@ -1,13 +1,13 @@
 # Griot Studio
 
-A professional YouTube automation suite for **African folktale** channels, built with Astro. Write a tale, and Griot Studio narrates it in a **free Nigerian voice**, illustrates it in a warm **3D animated folktale** look, writes the SEO, and publishes it to YouTube — one clean workspace to plan, produce, schedule, and track videos.
+A professional YouTube automation suite for **African folktale** channels, built with Astro. Write a tale, and Griot Studio narrates it in a **free male Storytime voice**, illustrates it in a warm **3D animated folktale** look, writes the SEO, and publishes it to YouTube — one clean workspace to plan, produce, schedule, and track videos.
 
 **Two ways to publish:**
 
 - **From GitHub (hands-off):** drop a folktale script in [`content/`](content/), push, and GitHub Actions renders and uploads it to YouTube automatically. See [PUBLISH-ON-GITHUB.md](PUBLISH-ON-GITHUB.md).
 - **From the app / your Mac:** use the Auto Video and Bulk Studio pages, or the background [`worker`](worker/README.md).
 
-The signature look and the recurring elder-griot narrator are described in [CHARACTER-REFERENCE.md](CHARACTER-REFERENCE.md). The free Nigerian narration voice is set up in [worker/SETUP-VOICE.md](worker/SETUP-VOICE.md).
+The signature look and the recurring elder-griot narrator are described in [CHARACTER-REFERENCE.md](CHARACTER-REFERENCE.md). The free male narration voice is set up in [worker/SETUP-VOICE.md](worker/SETUP-VOICE.md).
 
 ## What is inside
 
@@ -60,7 +60,7 @@ The Thumbnail Studio calls a keyless image model. Requests pass through a same o
 
 ## Voice
 
-Griot Studio uses an automatic Storytime voice pair: `en-US-JennyNeural` for female-led scripts and `en-US-BrianNeural` for male-led scripts, at a warm, measured storytelling cadence. It runs on **`edge-tts`**, the free neural voices built into Microsoft Edge: **no API key, no account, no card, and no per-video cost.** One-time setup is a single `pip install edge-tts`. Full details: [worker/SETUP-VOICE.md](worker/SETUP-VOICE.md).
+Griot Studio uses `en-US-BrianNeural`, a male Storytime narrator, for every script at a warm, measured storytelling cadence. Every video also generates its own male presenter portrait for the left side of the frame. It runs on **`edge-tts`**, the free neural voices built into Microsoft Edge: **no API key, no account, no card, and no per-video cost.** One-time setup is a single `pip install edge-tts`. Full details: [worker/SETUP-VOICE.md](worker/SETUP-VOICE.md).
 
 Image generation and video rendering are also keyless. Paid options (ElevenLabs, Azure) remain available if you ever want them, but are not needed:
 

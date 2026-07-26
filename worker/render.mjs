@@ -9,7 +9,6 @@ import { splitScript, buildPrompt, styleKeywords, VOICES } from "./csv.mjs";
 import { buildCharacterBible, sceneCharacterNote } from "./characters.mjs";
 import { buildSceneVisuals } from "./visuals.mjs";
 import { buildThumbnail } from "./thumbnail.mjs";
-import { detectGender } from "./gender.mjs";
 import { presenterSeed } from "./presenter.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -477,7 +476,8 @@ export async function renderJob(job, cfg, workDir, outFile) {
   const storyMode = style === "story" && cfg.presenter !== false;
   let presenter = null;
   if (storyMode) {
-    const gender = job.gender || detectGender(job.script);
+    const gender = "male";
+    job.gender = gender;
     const seed = presenterSeed(job);
     job.presenterSeed = seed;
     const who = gender === "male"

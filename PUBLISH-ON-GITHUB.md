@@ -9,7 +9,7 @@ YouTube channel, automatically. This is the workflow in
 1. Add a plain-text tale to the [`content/`](content/) folder (one file = one video, the
    file name is the title).
 2. `git commit` and `git push`.
-3. GitHub Actions renders it (3D African folktale visuals + Nigerian narration), writes the
+3. GitHub Actions renders it (Storytime visuals + male Brian narration), writes the
    SEO with Claude, and uploads it to YouTube.
 4. The script is moved to `content/published/` and the upload ledger is committed back, so a
    tale is never published twice.
@@ -27,7 +27,7 @@ them:
 3. When it finishes, open the run and download the **`folktale-videos`** artifact — a zip of the
    finished MP4s, thumbnails, and SEO text.
 
-This uses the free Nigerian voice and the 3D folktale look, uploads nothing to YouTube, and
+This uses the free male Brian voice and the Storytime look, uploads nothing to YouTube, and
 leaves your scripts in place so you can tweak and regenerate. When you're ready to auto-publish,
 connect YouTube (below) and use the normal push flow — which also attaches the same downloadable
 artifact to every run.
