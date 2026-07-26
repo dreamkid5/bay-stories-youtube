@@ -1,8 +1,8 @@
-# The Nigerian narration voice — free, no key
+# The Storytime narration voices — free, no key
 
-Griot Studio narrates every folktale with a professional **Nigerian English** neural voice.
-The default is **`en-NG-EzinneNeural`** (warm Nigerian female storyteller); the male elder is
-**`en-NG-AbeoNeural`**.
+Griot Studio narrates every story with an automatic two-voice pair:
+**`en-US-JennyNeural`** for female-led scripts and **`en-US-BrianNeural`** for male-led
+scripts. The worker detects the story's lead from the script and selects the matching voice.
 
 ## It is free. No AI-generator bill.
 
@@ -38,22 +38,22 @@ macOS and on the GitHub runners) and the one `pip install` above.
 
 | Voice | Who |
 | :-- | :-- |
-| `en-NG-EzinneNeural` | Nigerian female storyteller (default) |
-| `en-NG-AbeoNeural` | Nigerian male elder / griot |
+| `en-US-JennyNeural` | Female-led Storytime narration |
+| `en-US-BrianNeural` | Male-led Storytime narration |
 
-Change the channel's voice by setting `CF_EDGE_VOICE` (in `worker/.env`, or as `env:` in
-`.github/workflows/publish.yml`). Pace and warmth are tuned with `CF_EDGE_RATE` (default `-6%`)
-and `CF_EDGE_PITCH` (default `-2Hz`) for a measured, fireside storytelling cadence.
+Override the automatic pair with `CF_FEMALE_VOICE` and `CF_MALE_VOICE` (in `worker/.env`,
+or as `env:` in `.github/workflows/publish.yml`). `CF_EDGE_VOICE` remains the general fallback.
+Pace and warmth are tuned with `CF_EDGE_RATE` and `CF_EDGE_PITCH`.
 
 Browse every available voice:
 
 ```
-edge-tts --list-voices | grep en-NG
+edge-tts --list-voices
 ```
 
 ## Want even higher realism later?
 
 `edge-tts` is excellent and free. If one day you want the most expressive possible voice for a
 flagship video, ElevenLabs or Azure can be dropped in per the commented options in
-`worker/.env.example` — but that is optional and costs money. The free Nigerian voice is the
-default for a reason: it sounds great and never bills you.
+`worker/.env.example` — but that is optional and costs money. The free Storytime pair is the
+default and never bills you.

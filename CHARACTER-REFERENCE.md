@@ -37,6 +37,7 @@ description you can paste into any script:
 
 ## Voice
 
-Narration is a professional **Nigerian English** neural voice, free via `edge-tts` —
-`en-NG-EzinneNeural` (female storyteller) by default, or `en-NG-AbeoNeural` (male elder),
-delivered at a warm, measured griot cadence. No key or cost. See `worker/SETUP-VOICE.md`.
+Narration uses the free Storytime neural voice pair via `edge-tts`: `en-US-JennyNeural`
+for female-led stories and `en-US-BrianNeural` for male-led stories. The worker selects the
+voice automatically from the script and delivers it at a warm, measured storytelling cadence.
+No key or cost. See `worker/SETUP-VOICE.md`.

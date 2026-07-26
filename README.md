@@ -60,7 +60,7 @@ The Thumbnail Studio calls a keyless image model. Requests pass through a same o
 
 ## Voice
 
-Griot Studio narrates in a **professional Nigerian English** neural voice — `en-NG-EzinneNeural` (female storyteller) by default, or `en-NG-AbeoNeural` (male elder), at a warm, measured griot cadence. It runs on **`edge-tts`**, the free neural voices built into Microsoft Edge: **no API key, no account, no card, and no per-video cost.** One-time setup is a single `pip install edge-tts`. Full details: [worker/SETUP-VOICE.md](worker/SETUP-VOICE.md).
+Griot Studio uses an automatic Storytime voice pair: `en-US-JennyNeural` for female-led scripts and `en-US-BrianNeural` for male-led scripts, at a warm, measured storytelling cadence. It runs on **`edge-tts`**, the free neural voices built into Microsoft Edge: **no API key, no account, no card, and no per-video cost.** One-time setup is a single `pip install edge-tts`. Full details: [worker/SETUP-VOICE.md](worker/SETUP-VOICE.md).
 
 Image generation and video rendering are also keyless. Paid options (ElevenLabs, Azure) remain available if you ever want them, but are not needed:
 

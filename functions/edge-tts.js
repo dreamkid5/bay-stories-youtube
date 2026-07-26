@@ -58,7 +58,7 @@ export async function onRequest(context) {
   try { body = await request.json(); } catch (e) { return new Response("bad json", { status: 400 }); }
   const text = (body.text || "").toString().slice(0, 6000).trim();
   if (!text) return new Response("no text", { status: 400 });
-  const voice = /^[a-z]{2}-[A-Z]{2}-/.test(body.voice) ? body.voice : "en-NG-EzinneNeural";
+  const voice = /^[a-z]{2}-[A-Z]{2}-/.test(body.voice) ? body.voice : "en-US-JennyNeural";
   const rate = (body.rate || "-6%").toString();
   const pitch = (body.pitch || "-2Hz").toString();
 

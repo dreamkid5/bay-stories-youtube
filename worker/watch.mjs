@@ -57,8 +57,8 @@ const cfg = {
   // premium voice providers, choose by which key is set
   azureKey: process.env.AZURE_SPEECH_KEY || "",
   azureRegion: process.env.AZURE_SPEECH_REGION || "eastus",
-  // Nigerian English neural voice: Ezinne (female storyteller). Abeo is the male elder.
-  azureVoice: process.env.CF_AZURE_VOICE || "en-NG-EzinneNeural",
+  // Azure fallback for the Storytime voice pair.
+  azureVoice: process.env.CF_AZURE_VOICE || "en-US-JennyNeural",
   // Storytelling cadence: a measured, warm griot pace and a touch of pitch warmth.
   azureRate: process.env.CF_AZURE_RATE || "-6%",
   azurePitch: process.env.CF_AZURE_PITCH || "-2%",

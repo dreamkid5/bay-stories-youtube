@@ -11,8 +11,8 @@ How to add a folktale:
 
 What happens next (automatically):
 - GitHub Actions renders each new script into a narrated, illustrated video.
-- The narration is a professional Nigerian English voice (free via edge-tts,
-  en-NG-EzinneNeural female by default), at a warm storytelling pace.
+- The narration uses the free Storytime voice pair via edge-tts: Jenny for female-led
+  scripts and Brian for male-led scripts, selected automatically at a warm storytelling pace.
 - Every scene is drawn in the 3D animated African folktale look (see CHARACTER-REFERENCE.md).
 - Claude writes the SEO title, description, and tags, and keeps characters consistent.
 - The finished video is uploaded to your YouTube channel.

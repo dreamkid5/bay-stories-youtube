@@ -80,8 +80,7 @@ function xmlEscape(s) {
 
 async function fetchTTS(script, voice, outPath, cfg) {
   try {
-    // edge-tts: free Microsoft neural voices, no key and no card. Uses the same
-    // Nigerian voices as Azure (en-NG-EzinneNeural / en-NG-AbeoNeural). Invoked as
+    // edge-tts: free Microsoft neural voices, no key and no card. Invoked as
     // `python3 -m edge_tts`. Text is passed via a temp file to avoid arg limits.
     if (cfg.ttsProvider === "edge") {
       const name = (voice && /^[a-z]{2}-[A-Z]{2}-/.test(voice)) ? voice : cfg.edgeVoice;

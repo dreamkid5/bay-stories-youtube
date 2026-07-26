@@ -56,9 +56,8 @@ That's it. Repeat with as many tales as you like.
 
 These are already set to sensible defaults, so you can ignore them:
 
-- **Voice:** free Nigerian female storyteller (`en-NG-EzinneNeural`). To switch to the male
-  elder, change `CF_EDGE_VOICE` to `en-NG-AbeoNeural` in the two files under
-  `.github/workflows/`. (I can do this for you — just ask.)
+- **Voice:** free Storytime pair. Female-led scripts use `en-US-JennyNeural`; male-led scripts
+  use `en-US-BrianNeural`. The worker chooses automatically from the script.
 - **Look:** 3D animated African folktale (`folktale3d`).
 - **Scene length:** about 6 seconds.
 
