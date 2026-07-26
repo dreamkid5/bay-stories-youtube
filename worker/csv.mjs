@@ -46,15 +46,16 @@ export function parseCSV(text) {
   return rows.filter((r) => r.some((f) => f.trim()));
 }
 
-// Turn CSV text into a list of jobs. Columns: title, script, style, voice, music.
+// Turn CSV text into a list of jobs.
+// Columns: title, script, hook (optional), style, voice, music.
 export function jobsFromCSV(text) {
   const rows = parseCSV(text);
   if (!rows.length) return [];
-  let start = 0, ti = 0, si = 1, sti = 2, vi = -1, mi = -1;
+  let start = 0, ti = 0, si = 1, sti = 2, vi = -1, mi = -1, hi = -1;
   const first = rows[0].map((f) => f.trim().toLowerCase());
   if (first.indexOf("script") >= 0) {
     ti = first.indexOf("title"); si = first.indexOf("script"); sti = first.indexOf("style");
-    vi = first.indexOf("voice"); mi = first.indexOf("music");
+    vi = first.indexOf("voice"); mi = first.indexOf("music"); hi = first.indexOf("hook");
     if (ti < 0) ti = 0;
     start = 1;
   }
@@ -66,6 +67,7 @@ export function jobsFromCSV(text) {
     out.push({
       title: (r[ti] || ("Video " + (out.length + 1))).trim(),
       script,
+      hook: (hi >= 0 && r[hi] ? r[hi].trim() : ""),
       style: (sti >= 0 && r[sti] ? r[sti].trim() : ""),
       voice: (vi >= 0 && r[vi] ? r[vi].trim() : ""),
       music: (mi >= 0 && r[mi] ? r[mi].trim() : "")

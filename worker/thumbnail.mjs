@@ -17,20 +17,21 @@ const ANTON = path.join(FONTS_DIR, "Anton-Regular.ttf");
 
 // The hook that goes on the thumbnail: the opening of the story, trimmed to a punchy
 // length that ends on a sentence boundary where possible.
-function makeHook(job) {
+export function makeHook(job) {
   let t = String(job.hook || job.script || job.title || "").replace(/\s+/g, " ").trim();
   if (!t) return "";
   const words = t.split(" ");
   if (words.length > 46) t = words.slice(0, 46).join(" ") + "...";
-  // prefer to end on a full sentence if one lands reasonably far in
-  const m = t.match(/^[\s\S]*?[.!?…](?=\s|$)/g);
-  if (m) {
+  // Prefer to end on a full sentence once the opening hook has enough substance.
+  // Do not anchor this regex: an anchored global match only returns the first
+  // sentence, which used to reduce multi-sentence hooks to a weak opening line.
+  const sentences = t.match(/[^.!?…]+[.!?…]+(?:["'”’])?(?=\s|$)/g);
+  if (sentences) {
     let acc = "";
-    for (const s of m) {
+    for (const s of sentences) {
       const next = (acc ? acc + " " : "") + s.trim();
       if (next.split(" ").length > 46) break;
       acc = next;
-      if (acc.split(" ").length >= 18) break;
     }
     if (acc.split(" ").length >= 10) t = acc;
   }
