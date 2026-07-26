@@ -10,6 +10,7 @@ import { buildCharacterBible, sceneCharacterNote } from "./characters.mjs";
 import { buildSceneVisuals } from "./visuals.mjs";
 import { buildThumbnail } from "./thumbnail.mjs";
 import { detectGender } from "./gender.mjs";
+import { presenterSeed } from "./presenter.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const FONTS_DIR = path.join(HERE, "assets", "fonts");
@@ -477,13 +478,15 @@ export async function renderJob(job, cfg, workDir, outFile) {
   let presenter = null;
   if (storyMode) {
     const gender = job.gender || detectGender(job.script);
+    const seed = presenterSeed(job);
+    job.presenterSeed = seed;
     const who = gender === "male"
       ? "a friendly relatable young man in his late twenties, short neat dark hair, light stubble, plain casual modern t-shirt"
       : "a friendly relatable young woman in her late twenties, natural shoulder-length hair, plain casual modern top";
     const pPrompt = "cinematic photorealistic upper body portrait of " + who +
       ", warm genuine calm expression, facing the camera, soft natural indoor lighting, softly blurred cosy home background, shallow depth of field, 35mm, highly detailed realistic skin and face, not an illustration";
     const pPath = path.join(workDir, "presenter.jpg");
-    if (await fetchImage(pPrompt, 24680, pPath, cfg, { width: 768, height: 1024 })) presenter = pPath;
+    if (await fetchImage(pPrompt, seed, pPath, cfg, { width: 768, height: 1024 })) presenter = pPath;
     if (presenter) { job.presenterFile = presenter; job.gender = gender; }
     cfg.log("  presenter: " + (presenter ? gender + " (left)" : "could not generate, using full-frame scenes"));
   }

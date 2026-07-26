@@ -8,6 +8,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { styleKeywords, buildPrompt } from "./csv.mjs";
+import { presenterSeed } from "./presenter.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const FONTS_DIR = path.join(HERE, "assets", "fonts");
@@ -52,7 +53,8 @@ async function buildStoryThumbnail(job, cfg, workDir, outFile, deps) {
     const pPrompt = "cinematic photorealistic upper body portrait of " + who +
       ", warm genuine expression, facing the camera, soft natural indoor lighting, softly blurred background, shallow depth of field, 35mm, highly detailed realistic skin and face, not an illustration";
     const pPath = path.join(workDir, "thumb_person.jpg");
-    if (await deps.fetchImage(pPrompt, 24680, pPath, cfg, { width: 768, height: 1024 })) portrait = pPath;
+    const seed = job.presenterSeed || presenterSeed(job);
+    if (await deps.fetchImage(pPrompt, seed, pPath, cfg, { width: 768, height: 1024 })) portrait = pPath;
   }
   if (!portrait) return null;
 
