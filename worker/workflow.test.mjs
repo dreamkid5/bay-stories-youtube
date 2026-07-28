@@ -27,6 +27,12 @@ for (const name of ["publish.yml", "generate.yml"]) {
     assert.ok(quotedNumber(source, "CF_IMAGE_REQUEST_TIMEOUT_MS") <= 90000);
     assert.match(source, /^\s*timeout-minutes:\s*350\s*$/m);
   });
+
+  test(`${name} permanently locks narration to Brian's male voice`, async () => {
+    const source = await workflow(name);
+    assert.match(source, /^\s*CF_EDGE_VOICE:\s*en-US-BrianNeural\s*$/m);
+    assert.doesNotMatch(source, /CF_EDGE_VOICE:\s*en-US-JennyNeural/);
+  });
 }
 
 test("publish jobs check out the latest branch tip after waiting in the queue", async () => {

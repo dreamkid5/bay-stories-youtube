@@ -10,11 +10,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { jobsFromCSV, slug } from "./csv.mjs";
-import {
-  LOCKED_MALE_NARRATOR_VOICE,
-  LOCKED_NARRATOR_VOICE,
-  renderJob
-} from "./render.mjs";
+import { LOCKED_NARRATOR_VOICE, renderJob } from "./render.mjs";
 import { uploadToYouTube } from "./upload.mjs";
 import { generateSEO } from "./seo.mjs";
 
@@ -52,7 +48,7 @@ const cfg = {
   edgeVoice: LOCKED_NARRATOR_VOICE,
   edgeRate: process.env.CF_EDGE_RATE || "-5%",
   edgePitch: process.env.CF_EDGE_PITCH || "+0Hz",
-  femaleVoice: LOCKED_NARRATOR_VOICE,
+  narratorVoice: LOCKED_NARRATOR_VOICE,
   // local voice server, free and no card
   localTtsUrl: process.env.LOCAL_TTS_URL || "",
   // premium voice providers, choose by which key is set
@@ -85,11 +81,11 @@ const cfg = {
   log: (m) => console.log(m)
 };
 cfg.ytUpload = process.env.CF_YT_UPLOAD === "0" ? false : !!(cfg.ytClientId && cfg.ytClientSecret && cfg.ytRefreshToken);
-// Automated publishing defaults to Jenny. Only the checked-in per-title override
-// may select the locked Brian exception; env and CSV values remain ignored.
+// Automated publishing is permanently locked to Brian's male voice.
+// Environment, CSV, presenter, and title values remain ignored.
 cfg.ttsProvider = "edge";
 cfg.edgeVoice = LOCKED_NARRATOR_VOICE;
-cfg.femaleVoice = LOCKED_NARRATOR_VOICE;
+cfg.narratorVoice = LOCKED_NARRATOR_VOICE;
 cfg.ttsEnabled = true;
 // auto SEO (Claude writes titles, descriptions, tags): disabled with CF_SEO=0
 cfg.seoEnabled = process.env.CF_SEO === "0" ? false : !!cfg.anthropicKey;
@@ -193,7 +189,7 @@ async function processCSV(file, processed, videoOverrides) {
     const override = videoOverrides[job.title] || videoOverrides[file.name] || {};
     const maleException = override.presenterGender === "male";
     job.gender = maleException ? "male" : "female";
-    job.voice = maleException ? LOCKED_MALE_NARRATOR_VOICE : cfg.femaleVoice;
+    job.voice = cfg.narratorVoice;
     job.forceReupload = override.forceReupload === true;
     log("  " + job.gender + " presenter, narrator " + job.voice);
     const base = slug(job.title) || ("video_" + (i + 1));

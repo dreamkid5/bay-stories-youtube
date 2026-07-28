@@ -73,9 +73,9 @@ jobs:
       # A queued push may be superseded by an earlier serialized run that already
       # published its script. Treat that as a clean no-op, not a false failure.
       CF_REQUIRE_INPUT: "0"
-      # Voice — Jenny, locked via edge-tts (no key, no card)
+      # Voice — Brian, permanently locked via edge-tts (no key, no card)
       CF_TTS_PROVIDER: edge
-      CF_EDGE_VOICE: en-US-JennyNeural
+      CF_EDGE_VOICE: en-US-BrianNeural
       CF_EDGE_RATE: "-5%"
       CF_EDGE_PITCH: "+0Hz"
       # Claude — restricted to mandatory presenter verification. Disabling the

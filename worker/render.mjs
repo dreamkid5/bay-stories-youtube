@@ -15,19 +15,17 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const FONTS_DIR = path.join(HERE, "assets", "fonts");
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-// Narrator choices are repository constants, never caller/environment values.
-// Jenny remains the default; Brian is allowed only through the title override.
-export const LOCKED_NARRATOR_VOICE = "en-US-JennyNeural";
-export const LOCKED_MALE_NARRATOR_VOICE = "en-US-BrianNeural";
+// Narration is permanently locked to Brian's male voice. Caller, CSV,
+// environment, presenter gender, and title settings cannot replace it.
+export const LOCKED_NARRATOR_VOICE = "en-US-BrianNeural";
+export const LOCKED_MALE_NARRATOR_VOICE = LOCKED_NARRATOR_VOICE;
 
 export function femaleVoice() {
   return LOCKED_NARRATOR_VOICE;
 }
 
 export function approvedNarratorVoice(requested) {
-  return requested === LOCKED_MALE_NARRATOR_VOICE
-    ? LOCKED_MALE_NARRATOR_VOICE
-    : LOCKED_NARRATOR_VOICE;
+  return LOCKED_NARRATOR_VOICE;
 }
 
 // Escape a file path for use inside the ffmpeg subtitles filter argument.

@@ -39,17 +39,19 @@ test("the approved male presenter prompt excludes women", () => {
   assert.match(profile.prompt, /no woman, no female person/i);
 });
 
-test("narration accepts only the two repository-locked voices", () => {
-  assert.equal(LOCKED_NARRATOR_VOICE, "en-US-JennyNeural");
+test("every narration request resolves to the locked Brian male voice", () => {
+  assert.equal(LOCKED_NARRATOR_VOICE, "en-US-BrianNeural");
   assert.equal(LOCKED_MALE_NARRATOR_VOICE, "en-US-BrianNeural");
-  for (const requested of ["male", "en-US-GuyNeural", "", undefined]) {
+  for (const requested of [
+    "male",
+    "en-US-GuyNeural",
+    "en-US-JennyNeural",
+    "",
+    undefined
+  ]) {
     assert.equal(femaleVoice("edge", requested, {}), LOCKED_NARRATOR_VOICE);
     assert.equal(approvedNarratorVoice(requested), LOCKED_NARRATOR_VOICE);
   }
-  assert.equal(
-    approvedNarratorVoice(LOCKED_MALE_NARRATOR_VOICE),
-    LOCKED_MALE_NARRATOR_VOICE
-  );
 });
 
 test("visual validation accepts only one verified white adult woman", () => {
@@ -170,12 +172,12 @@ test("only the repository override can select the locked male exception", async 
   );
   assert.deepEqual(overrides["I Raised My Daughter"], {
     presenterGender: "male",
-    voice: LOCKED_MALE_NARRATOR_VOICE,
     forceReupload: true
   });
   assert.match(watchSource, /override\.presenterGender === "male"/);
   assert.match(watchSource, /job\.gender = maleException \? "male" : "female"/);
-  assert.match(watchSource, /job\.voice = maleException \? LOCKED_MALE_NARRATOR_VOICE : cfg\.femaleVoice/);
+  assert.match(watchSource, /job\.voice = cfg\.narratorVoice/);
+  assert.doesNotMatch(watchSource, /job\.voice\s*=\s*override/);
 });
 
 test("rendering fails closed when the configured presenter cannot be generated", async () => {

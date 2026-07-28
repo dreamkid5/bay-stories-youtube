@@ -38,9 +38,9 @@ jobs:
       CF_TIME_BUDGET_MIN: "240"
       # Manual generation must never pass green without producing a video.
       CF_REQUIRE_INPUT: "1"
-      # Locked Jenny narration
+      # Permanently locked Brian male narration
       CF_TTS_PROVIDER: edge
-      CF_EDGE_VOICE: en-US-JennyNeural
+      CF_EDGE_VOICE: en-US-BrianNeural
       CF_EDGE_RATE: "-5%"
       CF_EDGE_PITCH: "+0Hz"
       # Generate only: do not upload, do not archive
