@@ -423,6 +423,15 @@ async function muxAudio(video, narration, music, outPath, total, cfg) {
 
 // Produce a deterministic render plan without fetching images or invoking ffmpeg.
 // This keeps the 35-minute/one-hour production contract directly testable.
+function splitIntoWordScenes(script, targetWords) {
+  const words = script.trim().replace(/[ \t]+/g, " ").replace(/\n+/g, " ").split(/\s+/).filter(Boolean);
+  const scenes = [];
+  for (let i = 0; i < words.length; i += targetWords) {
+    scenes.push(words.slice(i, i + targetWords).join(" "));
+  }
+  return scenes.length ? scenes : [script.trim()];
+}
+
 export function planVideoScenes(script, cfg = {}, env = process.env) {
   const wps = Number(cfg.wps) || 2.4;
   const totalWords = script.trim().split(/\s+/).filter(Boolean).length;
@@ -431,25 +440,30 @@ export function planVideoScenes(script, cfg = {}, env = process.env) {
   // Exactly 35 minutes belongs to the long-form 720p profile.
   const isShort = estMinutes < hdMaxMinutes;
   const targetSec = Math.max(1.5, isShort
-    ? Number(env.CF_SHORT_SCENE_SECONDS || 12)
-    : (Number(cfg.sceneSeconds) || 20));
-  const maxScenes = Math.max(20, Number(env.CF_MAX_SCENES || 180));
+    ? Number(env.CF_SHORT_SCENE_SECONDS || 5)
+    : (Number(cfg.sceneSeconds) || 5));
+  const maxScenes = Math.max(20, Number(env.CF_MAX_SCENES || 720));
   let targetWords = Math.max(3, Math.round(targetSec * wps));
   if (Math.ceil(totalWords / targetWords) > maxScenes) {
     targetWords = Math.ceil(totalWords / maxScenes);
   }
-  let scenes = splitScript(script, targetWords);
+  // At the five-second production cadence, fixed word groups avoid clause-length
+  // overshoot and keep the visual changes very close to the requested timing.
+  const makeScenes = targetSec <= 5
+    ? (text, words) => splitIntoWordScenes(text, words)
+    : (text, words) => splitScript(text, words);
+  let scenes = makeScenes(script, targetWords);
   // Scenes are built from whole clauses, so they always land a little OVER the word
   // target. Measure the real average and correct once.
   const firstAvg = scenes.length ? totalWords / wps / scenes.length : targetSec;
   if (firstAvg > targetSec * 1.12) {
     targetWords = Math.max(3, Math.round(targetWords * (targetSec / firstAvg)));
-    scenes = splitScript(script, targetWords);
+    scenes = makeScenes(script, targetWords);
   }
   // Enforce the scene budget by stretching scenes, never by truncating narration.
   if (scenes.length > maxScenes) {
     targetWords = Math.ceil(targetWords * (scenes.length / maxScenes) + 1);
-    scenes = splitScript(script, targetWords);
+    scenes = makeScenes(script, targetWords);
   }
   const avgSec = scenes.length ? (totalWords / wps / scenes.length) : targetSec;
   return { scenes, totalWords, estMinutes, isShort, targetSec, maxScenes, avgSec, hdMaxMinutes };

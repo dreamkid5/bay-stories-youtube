@@ -42,9 +42,9 @@ concurrency:
 jobs:
   publish:
     runs-on: ubuntu-latest
-    # Leave an hour of headroom below GitHub's hard six-hour ceiling so a bad
-    # external service fails clearly instead of discarding six hours of work.
-    timeout-minutes: 300
+    # Five-second scenes create a large image batch, especially for a one-hour
+    # video. Use nearly the full GitHub Actions window while retaining headroom.
+    timeout-minutes: 350
     env:
       # True only once a YouTube channel is connected (YT_REFRESH_TOKEN secret set).
       # Until then this workflow does nothing — use the "Generate" workflow to make
@@ -53,19 +53,19 @@ jobs:
       CF_INPUT: ${{ github.workspace }}/content
       CF_OUTPUT: ${{ github.workspace }}/_render
       CF_STYLE: story
-      # Stories under 35 minutes stay at 1080p with frequent 12-second visual beats.
-      # Stories from 35 minutes through a full hour use 720p and 20-second beats.
-      # Every narrated word is retained; only the picture cadence changes.
-      CF_SCENE_SECONDS: "20"
+      # Every story uses a five-second visual target. Resolution remains 1080p
+      # below 35 minutes and 720p from 35 minutes upward.
+      # Every narrated word is retained.
+      CF_SCENE_SECONDS: "5"
       CF_HD_MAX_MINUTES: "35"
-      CF_SHORT_SCENE_SECONDS: "12"
+      CF_SHORT_SCENE_SECONDS: "5"
       CF_IMG_CONCURRENCY: "3"
       CF_IMAGE_REQUEST_TIMEOUT_MS: "90000"
       CF_WIDTH: "1920"
       CF_HEIGHT: "1080"
-      # A one-hour story gets up to 180 images (one about every 20 seconds).
+      # One hour at five seconds per scene is 720 individually generated images.
       # Extra-long scripts stretch scenes rather than losing narration.
-      CF_MAX_SCENES: "180"
+      CF_MAX_SCENES: "720"
       # Publish exactly one story per run. Its archive commit automatically starts
       # the next queued story, avoiding several long renders in one five-hour job.
       CF_MAX_FILES_PER_RUN: "1"
