@@ -53,24 +53,23 @@ jobs:
       CF_INPUT: ${{ github.workspace }}/content
       CF_OUTPUT: ${{ github.workspace }}/_render
       CF_STYLE: story
-      # Long videos use fewer, longer scenes at 720p. This preserves every word
-      # while bounding image generation and ffmpeg work.
-      CF_SCENE_SECONDS: "10"
-      # Videos at or under this many minutes get 1080p + the shorter scene length.
-      CF_HD_MAX_MINUTES: "20"
-      CF_SHORT_SCENE_SECONDS: "4.5"
+      # Stories under 35 minutes stay at 1080p with calm 15-second visual beats.
+      # Stories from 35 minutes through a full hour use 720p and 30-second beats.
+      # Every narrated word is retained; only the picture cadence changes.
+      CF_SCENE_SECONDS: "30"
+      CF_HD_MAX_MINUTES: "35"
+      CF_SHORT_SCENE_SECONDS: "15"
       CF_IMG_CONCURRENCY: "3"
       CF_IMAGE_REQUEST_TIMEOUT_MS: "90000"
-      # Short videos remain 1080p. The renderer automatically switches longer
-      # videos to 720p so normal story scripts finish reliably on GitHub runners.
       CF_WIDTH: "1920"
       CF_HEIGHT: "1080"
-      # Scene budget: long scripts get LONGER scenes (never truncated) so image count
-      # stays bounded. The failed July 28 run attempted 344 scenes; 180 keeps the
-      # complete narration while cutting image and encoding work nearly in half.
-      CF_MAX_SCENES: "180"
-      # Do not start another video after 3h, leaving two hours for the current one.
-      CF_TIME_BUDGET_MIN: "180"
+      # A one-hour story needs at most 120 images (one every 30 seconds), not
+      # hundreds. Extra-long scripts stretch scenes rather than losing narration.
+      CF_MAX_SCENES: "120"
+      # Publish exactly one story per run. Its archive commit automatically starts
+      # the next queued story, avoiding several long renders in one five-hour job.
+      CF_MAX_FILES_PER_RUN: "1"
+      CF_TIME_BUDGET_MIN: "240"
       # A queued push may be superseded by an earlier serialized run that already
       # published its script. Treat that as a clean no-op, not a false failure.
       CF_REQUIRE_INPUT: "0"
@@ -169,7 +168,9 @@ jobs:
           if git diff --cached --quiet; then
             echo "No new tales were published."
           else
-            git commit -m "chore: publish folktale(s) [skip ci]"
+            # This commit starts the next serialized run. That run processes the
+            # next pending story, or exits cleanly when the queue is empty.
+            git commit -m "chore: publish folktale(s)"
             git pull --rebase --autostash origin ${{ github.ref_name }} || true
             git push
           fi

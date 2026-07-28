@@ -110,6 +110,10 @@ const log = (m) => console.log("[" + stamp() + "] " + m);
 // the next run. CF_TIME_BUDGET_MIN=0 (the default) means no limit, for local runs.
 const RUN_START = Date.now();
 const TIME_BUDGET_MIN = Number(process.env.CF_TIME_BUDGET_MIN || 0);
+const configuredMaxFiles = Number(process.env.CF_MAX_FILES_PER_RUN || 0);
+const MAX_FILES_PER_RUN = Number.isFinite(configuredMaxFiles) && configuredMaxFiles > 0
+  ? Math.floor(configuredMaxFiles)
+  : Infinity;
 const REQUIRE_INPUT = process.env.CF_REQUIRE_INPUT === "1";
 const minsElapsed = () => (Date.now() - RUN_START) / 60000;
 function outOfTime() {
@@ -143,7 +147,7 @@ async function listNewCSVs(processed) {
     const key = e.name + ":" + Math.round(st.mtimeMs);
     if (!processed.has(key)) out.push({ name: e.name, key });
   }
-  return out;
+  return out.sort((a, b) => a.name.localeCompare(b.name));
 }
 
 function jobFromText(name, text) {
@@ -255,7 +259,11 @@ async function runOnce() {
     return;
   }
   const failures = [];
-  for (const f of news) {
+  const selected = news.slice(0, MAX_FILES_PER_RUN);
+  if (selected.length < news.length) {
+    log("processing " + selected.length + " of " + news.length + " pending scripts this run; the rest remain queued");
+  }
+  for (const f of selected) {
     if (outOfTime()) {
       log("time budget reached after " + minsElapsed().toFixed(0) + " min, leaving the remaining script(s) for the next run");
       break;

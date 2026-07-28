@@ -421,66 +421,61 @@ async function muxAudio(video, narration, music, outPath, total, cfg) {
   return outPath;
 }
 
+// Produce a deterministic render plan without fetching images or invoking ffmpeg.
+// This keeps the 35-minute/one-hour production contract directly testable.
+export function planVideoScenes(script, cfg = {}, env = process.env) {
+  const wps = Number(cfg.wps) || 2.4;
+  const totalWords = script.trim().split(/\s+/).filter(Boolean).length;
+  const estMinutes = totalWords / wps / 60;
+  const hdMaxMinutes = Number(env.CF_HD_MAX_MINUTES || 35);
+  // Exactly 35 minutes belongs to the long-form 720p profile.
+  const isShort = estMinutes < hdMaxMinutes;
+  const targetSec = Math.max(1.5, isShort
+    ? Number(env.CF_SHORT_SCENE_SECONDS || 15)
+    : (Number(cfg.sceneSeconds) || 30));
+  const maxScenes = Math.max(20, Number(env.CF_MAX_SCENES || 120));
+  let targetWords = Math.max(3, Math.round(targetSec * wps));
+  if (Math.ceil(totalWords / targetWords) > maxScenes) {
+    targetWords = Math.ceil(totalWords / maxScenes);
+  }
+  let scenes = splitScript(script, targetWords);
+  // Scenes are built from whole clauses, so they always land a little OVER the word
+  // target. Measure the real average and correct once.
+  const firstAvg = scenes.length ? totalWords / wps / scenes.length : targetSec;
+  if (firstAvg > targetSec * 1.12) {
+    targetWords = Math.max(3, Math.round(targetWords * (targetSec / firstAvg)));
+    scenes = splitScript(script, targetWords);
+  }
+  // Enforce the scene budget by stretching scenes, never by truncating narration.
+  if (scenes.length > maxScenes) {
+    targetWords = Math.ceil(targetWords * (scenes.length / maxScenes) + 1);
+    scenes = splitScript(script, targetWords);
+  }
+  const avgSec = scenes.length ? (totalWords / wps / scenes.length) : targetSec;
+  return { scenes, totalWords, estMinutes, isShort, targetSec, maxScenes, avgSec, hdMaxMinutes };
+}
+
 // ---------- orchestration ----------
 export async function renderJob(job, cfg, workDir, outFile) {
   await fs.mkdir(workDir, { recursive: true });
   const style = styleKeywords[job.style] ? job.style : cfg.style;
 
-  // Cut the script into short scenes of about the target length. The final duration
-  // of each scene comes from its own narration below, so the pictures stay locked to
-  // the voice; this word estimate only sets roughly how much text each scene covers.
-  const wps = Number(cfg.wps) || 2.4;
-  const totalWords = job.script.trim().split(/\s+/).filter(Boolean).length;
-  const estMinutes = totalWords / wps / 60;
-
-  // Two tiers, decided by how long the finished video will be:
-  //   Short/normal videos  -> snappier scenes at full 1080p (the batch is small
-  //                           enough that a 1080p render always finishes in time).
-  //   Long videos          -> slightly longer scenes and 720p, because the image
-  //                           count grows with length and a huge 1080p batch can
-  //                           outrun a CI time limit on a bad day.
-  const HD_MAX_MIN = Number(process.env.CF_HD_MAX_MINUTES || 20);
-  const isShort = estMinutes <= HD_MAX_MIN;
-  const targetSec = Math.max(1.5, isShort
-    ? Number(process.env.CF_SHORT_SCENE_SECONDS || 4.5)
-    : (Number(cfg.sceneSeconds) || 10));
+  // The final duration of each scene comes from its narration, so pictures stay
+  // locked to the voice. The plan only controls visual cadence and resolution.
+  const plan = planVideoScenes(job.script, cfg);
+  const { scenes, totalWords, estMinutes, isShort, targetSec, maxScenes, avgSec, hdMaxMinutes } = plan;
   cfg.log("  ~" + estMinutes.toFixed(0) + " min video: " + (isShort
     ? "1080p, aiming for " + targetSec + "s scenes"
     : "long video, 720p, aiming for " + targetSec + "s scenes"));
-
-  // Scene budget. This is the safety valve that stops very long scripts from needing
-  // more images than a render can finish. Rather than CUTTING the story short, a script
-  // that would overflow the budget gets LONGER scenes instead, so the whole story is
-  // still told, just with each picture held a little longer. Bounded images => bounded
-  // render time => a run can never grind past a CI time limit.
-  const MAX_SCENES = Math.max(20, Number(process.env.CF_MAX_SCENES || 180));
-  let targetWords = Math.max(3, Math.round(targetSec * wps));
-  if (Math.ceil(totalWords / targetWords) > MAX_SCENES) {
-    targetWords = Math.ceil(totalWords / MAX_SCENES);
-    cfg.log("  long script (" + totalWords + " words): stretching scenes so the whole story fits in " + MAX_SCENES + " scenes");
+  if (scenes.length >= maxScenes) {
+    cfg.log("  long script (" + totalWords + " words): stretching scenes so the whole story fits in " + maxScenes + " scenes");
   }
-  let scenes = splitScript(job.script, targetWords);
-  // Scenes are built from whole clauses, so they always land a little OVER the word
-  // target. Measure the real average and correct once, so "6 seconds" actually gives
-  // about 6 seconds instead of drifting to 8.
-  const firstAvg = scenes.length ? totalWords / wps / scenes.length : targetSec;
-  if (firstAvg > targetSec * 1.12) {
-    targetWords = Math.max(3, Math.round(targetWords * (targetSec / firstAvg)));
-    scenes = splitScript(job.script, targetWords);
-  }
-  // Then enforce the scene budget (stretch, never truncate).
-  if (scenes.length > MAX_SCENES) {
-    targetWords = Math.ceil(targetWords * (scenes.length / MAX_SCENES) + 1);
-    scenes = splitScript(job.script, targetWords);
-  }
-  const avgSec = scenes.length ? (totalWords / wps / scenes.length) : targetSec;
   cfg.log("  " + scenes.length + " scenes, about " + avgSec.toFixed(1) + "s each, synced to the voice");
 
-  // Resolution follows the same tier: full 1080p for short/normal videos, 720p for
-  // long ones, so the image batch always stays small enough to finish in time.
+  // Resolution follows the same tier: 1080p below 35 minutes, 720p from 35 minutes.
   if (!isShort && (Number(cfg.width) || 1920) > 1280) {
     cfg = { ...cfg, width: 1280, height: 720 };
-    cfg.log("  over " + HD_MAX_MIN + " min: rendering at 720p so it finishes safely");
+    cfg.log("  " + hdMaxMinutes + " min or longer: rendering at 720p so it finishes safely");
   }
 
   // Channel lock: every video is rendered in storytime mode with one fresh female

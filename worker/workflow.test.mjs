@@ -18,11 +18,12 @@ function quotedNumber(source, name) {
 }
 
 for (const name of ["publish.yml", "generate.yml"]) {
-  test(`${name} keeps long renders inside the GitHub Actions budget`, async () => {
+  test(`${name} uses the agreed 35-minute and one-hour render profile`, async () => {
     const source = await workflow(name);
-    assert.ok(quotedNumber(source, "CF_HD_MAX_MINUTES") <= 20);
-    assert.ok(quotedNumber(source, "CF_SCENE_SECONDS") >= 10);
-    assert.ok(quotedNumber(source, "CF_MAX_SCENES") <= 180);
+    assert.equal(quotedNumber(source, "CF_HD_MAX_MINUTES"), 35);
+    assert.equal(quotedNumber(source, "CF_SHORT_SCENE_SECONDS"), 15);
+    assert.equal(quotedNumber(source, "CF_SCENE_SECONDS"), 30);
+    assert.equal(quotedNumber(source, "CF_MAX_SCENES"), 120);
     assert.ok(quotedNumber(source, "CF_IMAGE_REQUEST_TIMEOUT_MS") <= 90000);
     assert.match(source, /^\s*timeout-minutes:\s*300\s*$/m);
   });
@@ -32,4 +33,6 @@ test("publish jobs check out the latest branch tip after waiting in the queue", 
   const source = await workflow("publish.yml");
   assert.match(source, /^\s*ref:\s*\$\{\{\s*github\.ref_name\s*\}\}\s*$/m);
   assert.match(source, /^\s*cancel-in-progress:\s*false\s*$/m);
+  assert.equal(quotedNumber(source, "CF_MAX_FILES_PER_RUN"), 1);
+  assert.doesNotMatch(source, /\[skip ci\]/);
 });
