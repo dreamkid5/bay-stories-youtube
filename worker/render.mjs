@@ -431,9 +431,9 @@ export function planVideoScenes(script, cfg = {}, env = process.env) {
   // Exactly 35 minutes belongs to the long-form 720p profile.
   const isShort = estMinutes < hdMaxMinutes;
   const targetSec = Math.max(1.5, isShort
-    ? Number(env.CF_SHORT_SCENE_SECONDS || 15)
-    : (Number(cfg.sceneSeconds) || 30));
-  const maxScenes = Math.max(20, Number(env.CF_MAX_SCENES || 120));
+    ? Number(env.CF_SHORT_SCENE_SECONDS || 12)
+    : (Number(cfg.sceneSeconds) || 20));
+  const maxScenes = Math.max(20, Number(env.CF_MAX_SCENES || 180));
   let targetWords = Math.max(3, Math.round(targetSec * wps));
   if (Math.ceil(totalWords / targetWords) > maxScenes) {
     targetWords = Math.ceil(totalWords / maxScenes);

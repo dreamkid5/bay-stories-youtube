@@ -21,9 +21,9 @@ for (const name of ["publish.yml", "generate.yml"]) {
   test(`${name} uses the agreed 35-minute and one-hour render profile`, async () => {
     const source = await workflow(name);
     assert.equal(quotedNumber(source, "CF_HD_MAX_MINUTES"), 35);
-    assert.equal(quotedNumber(source, "CF_SHORT_SCENE_SECONDS"), 15);
-    assert.equal(quotedNumber(source, "CF_SCENE_SECONDS"), 30);
-    assert.equal(quotedNumber(source, "CF_MAX_SCENES"), 120);
+    assert.equal(quotedNumber(source, "CF_SHORT_SCENE_SECONDS"), 12);
+    assert.equal(quotedNumber(source, "CF_SCENE_SECONDS"), 20);
+    assert.equal(quotedNumber(source, "CF_MAX_SCENES"), 180);
     assert.ok(quotedNumber(source, "CF_IMAGE_REQUEST_TIMEOUT_MS") <= 90000);
     assert.match(source, /^\s*timeout-minutes:\s*300\s*$/m);
   });
