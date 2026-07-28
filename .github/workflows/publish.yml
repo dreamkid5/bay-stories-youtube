@@ -2,8 +2,8 @@ name: Publish folktales to YouTube
 
 # How it works:
 #   1. You write a folktale as a plain .txt file in the content/ folder and push it.
-#   2. This workflow renders it with the locked Jenny voice, validates its female
-#      presenter, creates the thumbnail, and uploads it to YouTube.
+#   2. This workflow renders it with a repository-locked voice and verified
+#      presenter, creates the matching thumbnail, and uploads it to YouTube.
 #   3. The published script is moved to content/published/ and the upload ledger
 #      (content/.cf-uploaded.json) is committed back, so a tale is never made twice.
 #   4. If a newly added script is accidentally put in content/published/, preflight

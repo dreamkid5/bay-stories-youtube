@@ -2,13 +2,13 @@ name: Generate folktale videos (download only)
 
 # Use this to MAKE videos on GitHub without publishing to YouTube.
 #   Actions tab → "Generate folktale videos (download only)" → Run workflow.
-# It renders every script in content/ into a narrated, illustrated MP4 (locked
-# Jenny voice + matching storytime look) and attaches the videos as a downloadable
-# artifact. Nothing is uploaded to YouTube and no scripts are archived, so you
-# can tweak a script and generate again.
+# It renders every script in content/ into a narrated, illustrated MP4 with a
+# repository-locked voice and matching storytime look, then attaches the videos
+# as a downloadable artifact. Nothing is uploaded to YouTube and no scripts are
+# archived, so you can tweak a script and generate again.
 #
 # Secrets:
-#   ANTHROPIC_API_KEY   required only to verify the female presenter
+#   ANTHROPIC_API_KEY   required only to verify the configured presenter
 #   CF_IMAGE_TOKEN      optional; provides higher image-generation limits
 
 on:

@@ -10,7 +10,11 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { jobsFromCSV, slug } from "./csv.mjs";
-import { LOCKED_NARRATOR_VOICE, renderJob } from "./render.mjs";
+import {
+  LOCKED_MALE_NARRATOR_VOICE,
+  LOCKED_NARRATOR_VOICE,
+  renderJob
+} from "./render.mjs";
 import { uploadToYouTube } from "./upload.mjs";
 import { generateSEO } from "./seo.mjs";
 
@@ -42,7 +46,7 @@ const cfg = {
   ttsUrl: process.env.CF_TTS_URL || "https://api.openai.com/v1/audio/speech",
   ttsModel: process.env.CF_TTS_MODEL || "gpt-4o-mini-tts",
   ttsVoice: process.env.CF_TTS_VOICE || "nova",
-  // edge-tts: free Microsoft neural voices, NO key, NO card. Female-only narration.
+  // edge-tts: free Microsoft neural voices, NO key, NO card.
   // Invoked as: python3 -m edge_tts. Install once with: pip install edge-tts
   edgeCmd: process.env.CF_EDGE_CMD || "python3",
   edgeVoice: LOCKED_NARRATOR_VOICE,
@@ -81,9 +85,8 @@ const cfg = {
   log: (m) => console.log(m)
 };
 cfg.ytUpload = process.env.CF_YT_UPLOAD === "0" ? false : !!(cfg.ytClientId && cfg.ytClientSecret && cfg.ytRefreshToken);
-// Automated publishing is permanently locked to Microsoft's Jenny voice.
-// Environment variables, CSV fields, and configured premium providers cannot
-// change the narrator.
+// Automated publishing defaults to Jenny. Only the checked-in per-title override
+// may select the locked Brian exception; env and CSV values remain ignored.
 cfg.ttsProvider = "edge";
 cfg.edgeVoice = LOCKED_NARRATOR_VOICE;
 cfg.femaleVoice = LOCKED_NARRATOR_VOICE;
@@ -150,6 +153,17 @@ async function listNewCSVs(processed) {
   return out.sort((a, b) => a.name.localeCompare(b.name));
 }
 
+async function loadVideoOverrides() {
+  try {
+    const data = JSON.parse(
+      await fs.readFile(path.join(cfg.input, ".cf-video-overrides.json"), "utf8")
+    );
+    return data && typeof data === "object" ? data : {};
+  } catch (error) {
+    return {};
+  }
+}
+
 function jobFromText(name, text) {
   const script = text.replace(/\r/g, "").trim();
   if (!script) return [];
@@ -157,7 +171,7 @@ function jobFromText(name, text) {
   return [{ title: title || "Video", script, style: cfg.style, voice: "", music: cfg.music }];
 }
 
-async function processCSV(file, processed) {
+async function processCSV(file, processed, videoOverrides) {
   const text = await fs.readFile(path.join(cfg.input, file.name), "utf8");
   const jobs = /\.txt$/i.test(file.name) ? jobFromText(file.name, text) : jobsFromCSV(text);
   if (!jobs.length) {
@@ -174,11 +188,14 @@ async function processCSV(file, processed) {
       break;
     }
     const job = jobs[i];
-    // Channel rule: every video uses a female presenter and female narrator.
-    // Ignore CSV voice/gender values so a male voice cannot slip into automation.
-    job.gender = "female";
-    job.voice = cfg.femaleVoice;
-    log("  female presenter, narrator " + job.voice);
+    // Repository-controlled title overrides are the only way to select an approved
+    // exception. CSV fields and environment variables remain ignored.
+    const override = videoOverrides[job.title] || videoOverrides[file.name] || {};
+    const maleException = override.presenterGender === "male";
+    job.gender = maleException ? "male" : "female";
+    job.voice = maleException ? LOCKED_MALE_NARRATOR_VOICE : cfg.femaleVoice;
+    job.forceReupload = override.forceReupload === true;
+    log("  " + job.gender + " presenter, narrator " + job.voice);
     const base = slug(job.title) || ("video_" + (i + 1));
     const outFile = path.join(cfg.output, base + ".mp4");
     const workDir = path.join(cfg.output, ".work", base);
@@ -251,6 +268,7 @@ async function processCSV(file, processed) {
 async function runOnce() {
   await ensureDirs();
   const processed = await loadProcessed();
+  const videoOverrides = await loadVideoOverrides();
   const news = await listNewCSVs(processed);
   if (!news.length) {
     const message = "no new .txt or .csv scripts in " + cfg.input;
@@ -269,7 +287,7 @@ async function runOnce() {
       break;
     }
     try {
-      const ok = await processCSV(f, processed);
+      const ok = await processCSV(f, processed, videoOverrides);
       if (!ok) failures.push(f.name);
     } catch (error) {
       log("failed " + f.name + ": " + error.message);

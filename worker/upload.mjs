@@ -124,19 +124,23 @@ export async function uploadToYouTube(file, job, cfg) {
 
   // Layer 1, rename proof: this script already points at a video that still
   // exists on the channel. Works even if you retitled the video.
-  if (key && ledger[key] && await videoExists(token, ledger[key])) {
-    cfg.log("  already uploaded (matched by script), skipping: https://youtu.be/" + ledger[key]);
-    return ledger[key];
-  }
+  if (!job.forceReupload) {
+    if (key && ledger[key] && await videoExists(token, ledger[key])) {
+      cfg.log("  already uploaded (matched by script), skipping: https://youtu.be/" + ledger[key]);
+      return ledger[key];
+    }
 
-  // Layer 2: a video with this title (or your edited version of it) is already
-  // up. Catches videos that predate the ledger. Record it so future runs match
-  // by script even after you rename it.
-  const already = await findExistingUpload(token, meta.snippet.title);
-  if (already) {
-    if (key) { ledger[key] = already; await saveLedger(cfg, ledger); }
-    cfg.log("  already on YouTube, skipping the upload: https://youtu.be/" + already);
-    return already;
+    // Layer 2: a video with this title (or your edited version of it) is already
+    // up. Catches videos that predate the ledger. Record it so future runs match
+    // by script even after you rename it.
+    const already = await findExistingUpload(token, meta.snippet.title);
+    if (already) {
+      if (key) { ledger[key] = already; await saveLedger(cfg, ledger); }
+      cfg.log("  already on YouTube, skipping the upload: https://youtu.be/" + already);
+      return already;
+    }
+  } else {
+    cfg.log("  explicit corrected-version upload: preserving the existing private draft");
   }
 
   // Start a resumable upload session.

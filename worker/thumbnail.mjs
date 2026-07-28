@@ -8,7 +8,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { styleKeywords, buildPrompt } from "./csv.mjs";
-import { generateUniqueFemalePresenter } from "./presenter.mjs";
+import { generateUniquePresenter } from "./presenter.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const FONTS_DIR = path.join(HERE, "assets", "fonts");
@@ -48,11 +48,12 @@ async function buildStoryThumbnail(job, cfg, workDir, outFile, deps) {
   // the same uniqueness ledger while trying again for the thumbnail.
   let portrait = job.presenterFile && fs.existsSync(job.presenterFile) ? job.presenterFile : null;
   if (!portrait) {
-    const generated = await generateUniqueFemalePresenter({
+    const generated = await generateUniquePresenter({
       job,
       cfg,
       workDir,
-      fetchImage: deps.fetchImage
+      fetchImage: deps.fetchImage,
+      gender: job.gender === "male" ? "male" : "female"
     });
     portrait = generated && generated.file;
     if (portrait) job.presenterFile = portrait;

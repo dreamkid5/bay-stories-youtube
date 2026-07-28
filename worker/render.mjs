@@ -9,18 +9,25 @@ import { splitScript, buildPrompt, styleKeywords } from "./csv.mjs";
 import { buildCharacterBible, sceneCharacterNote } from "./characters.mjs";
 import { buildSceneVisuals } from "./visuals.mjs";
 import { buildThumbnail } from "./thumbnail.mjs";
-import { generateUniqueFemalePresenter } from "./presenter.mjs";
+import { generateUniquePresenter } from "./presenter.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const FONTS_DIR = path.join(HERE, "assets", "fonts");
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-// This channel has one immutable narrator voice. Keep the compatibility helper
-// so older callers still work, but ignore every provider and voice override.
+// Narrator choices are repository constants, never caller/environment values.
+// Jenny remains the default; Brian is allowed only through the title override.
 export const LOCKED_NARRATOR_VOICE = "en-US-JennyNeural";
+export const LOCKED_MALE_NARRATOR_VOICE = "en-US-BrianNeural";
 
 export function femaleVoice() {
   return LOCKED_NARRATOR_VOICE;
+}
+
+export function approvedNarratorVoice(requested) {
+  return requested === LOCKED_MALE_NARRATOR_VOICE
+    ? LOCKED_MALE_NARRATOR_VOICE
+    : LOCKED_NARRATOR_VOICE;
 }
 
 // Escape a file path for use inside the ffmpeg subtitles filter argument.
@@ -92,10 +99,10 @@ function xmlEscape(s) {
 
 async function fetchTTS(script, voice, outPath, cfg) {
   try {
-    // edge-tts: free Microsoft neural voices, no key and no card. Female voices only.
+    // edge-tts: free Microsoft neural voices, no key and no card.
     // Text is passed via a temp file to avoid arg limits.
     if (cfg.ttsProvider === "edge") {
-      const name = femaleVoice("edge", voice, cfg);
+      const name = approvedNarratorVoice(voice);
       const txt = outPath + ".txt";
       // tts_words.py writes the mp3 AND a sidecar of per-word timings (outPath.words.json)
       // that the caption engine uses to highlight each word as it is spoken.
@@ -497,19 +504,21 @@ export async function renderJob(job, cfg, workDir, outFile) {
   const storyMode = true;
   let presenter = null;
   if (storyMode) {
-    const generatedPresenter = await generateUniqueFemalePresenter({
+    const presenterGender = job.gender === "male" ? "male" : "female";
+    const generatedPresenter = await generateUniquePresenter({
       job,
       cfg,
       workDir,
-      fetchImage
+      fetchImage,
+      gender: presenterGender
     });
     if (!generatedPresenter || !generatedPresenter.file) {
-      throw new Error("female presenter generation failed; refusing to render without a female presenter");
+      throw new Error(presenterGender + " presenter generation failed; refusing to render with the wrong presenter");
     }
     presenter = generatedPresenter.file;
     job.presenterFile = presenter;
-    job.gender = "female";
-    cfg.log("  presenter: new female identity " + generatedPresenter.identity + " (left)");
+    job.gender = presenterGender;
+    cfg.log("  presenter: new " + presenterGender + " identity " + generatedPresenter.identity + " (left)");
   }
 
   // Character bible: keep the main characters looking the same across scenes.

@@ -110,7 +110,7 @@ export async function runPreflight({
   }
   if (scripts.length && requireAnthropic && !String(anthropicKey).trim()) {
     throw new Error(
-      "ANTHROPIC_API_KEY is missing. It is required only to visually verify that the generated presenter is a white adult woman. " +
+      "ANTHROPIC_API_KEY is missing. It is required only to visually verify the configured adult presenter. " +
       "The workflow stops here so it cannot create a video with the wrong presenter."
     );
   }
