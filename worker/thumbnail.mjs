@@ -8,7 +8,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { styleKeywords, buildPrompt } from "./csv.mjs";
-import { presenterSeed } from "./presenter.mjs";
+import { generateUniqueFemalePresenter } from "./presenter.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const FONTS_DIR = path.join(HERE, "assets", "fonts");
@@ -19,20 +19,21 @@ const ANTON = path.join(FONTS_DIR, "Anton-Regular.ttf");
 // The hook that goes on the thumbnail: the opening of the story, trimmed to a punchy
 // length that ends on a sentence boundary where possible.
 export function makeHook(job) {
-  let t = String(job.hook || job.script || job.title || "").replace(/\s+/g, " ").trim();
+  // Thumbnail text may come only from an explicit hook or the opening hook of the
+  // script. Never substitute the title, SEO copy, or an AI-written headline.
+  let t = String(job.hook || job.script || "").replace(/\s+/g, " ").trim();
   if (!t) return "";
   const words = t.split(" ");
   if (words.length > 46) t = words.slice(0, 46).join(" ") + "...";
-  // Prefer to end on a full sentence once the opening hook has enough substance.
-  // Do not anchor this regex: an anchored global match only returns the first
-  // sentence, which used to reduce multi-sentence hooks to a weak opening line.
-  const sentences = t.match(/[^.!?…]+[.!?…]+(?:["'”’])?(?=\s|$)/g);
-  if (sentences) {
+  // prefer to end on a full sentence if one lands reasonably far in
+  const m = t.match(/^[\s\S]*?[.!?…](?=\s|$)/g);
+  if (m) {
     let acc = "";
-    for (const s of sentences) {
+    for (const s of m) {
       const next = (acc ? acc + " " : "") + s.trim();
       if (next.split(" ").length > 46) break;
       acc = next;
+      if (acc.split(" ").length >= 18) break;
     }
     if (acc.split(" ").length >= 10) t = acc;
   }
@@ -43,15 +44,18 @@ export function makeHook(job) {
 async function buildStoryThumbnail(job, cfg, workDir, outFile, deps) {
   if (!fs.existsSync(MONTSERRAT)) return null;
 
-  // Person image: reuse the video's presenter; if there isn't one, make a portrait.
+  // Reuse this video's presenter. If the video could not make one earlier, use
+  // the same uniqueness ledger while trying again for the thumbnail.
   let portrait = job.presenterFile && fs.existsSync(job.presenterFile) ? job.presenterFile : null;
   if (!portrait) {
-    const who = "a friendly relatable young man in his late twenties, short neat dark hair, light stubble, plain casual modern t-shirt";
-    const pPrompt = "cinematic photorealistic upper body portrait of " + who +
-      ", warm genuine expression, facing the camera, soft natural indoor lighting, softly blurred background, shallow depth of field, 35mm, highly detailed realistic skin and face, not an illustration";
-    const pPath = path.join(workDir, "thumb_person.jpg");
-    const seed = job.presenterSeed || presenterSeed(job);
-    if (await deps.fetchImage(pPrompt, seed, pPath, cfg, { width: 768, height: 1024 })) portrait = pPath;
+    const generated = await generateUniqueFemalePresenter({
+      job,
+      cfg,
+      workDir,
+      fetchImage: deps.fetchImage
+    });
+    portrait = generated && generated.file;
+    if (portrait) job.presenterFile = portrait;
   }
   if (!portrait) return null;
 
@@ -89,12 +93,13 @@ function extractJSON(text) {
 
 async function thumbnailPlan(job, cfg) {
   if (!cfg.anthropicKey) return null;
+  const hook = makeHook(job);
+  if (!hook) return null;
   const prompt =
     "You are designing a YouTube thumbnail for this video. Return ONLY JSON: " +
-    '{"headline":"...","imagePrompt":"..."}\n' +
-    "- headline: 2 to 4 punchy UPPERCASE words that spark curiosity. This text goes large on the thumbnail. No punctuation, no dash character.\n" +
+    '{"imagePrompt":"..."}\n' +
     "- imagePrompt: one vivid, dramatic single scene that captures the hook of the video, described for an illustrator. One clear subject, strong emotion or action, close or medium shot, no text in the image.\n\n" +
-    "Base both on this script:\n" + (job.script || job.title || "").slice(0, 5000);
+    "Base it only on this hook:\n" + hook;
   for (let a = 0; a < 3; a++) {
     try {
       const r = await fetch("https://api.anthropic.com/v1/messages", {
@@ -107,7 +112,7 @@ async function thumbnailPlan(job, cfg) {
       const j = await r.json();
       const data = extractJSON(j && j.content && j.content[0] && j.content[0].text);
       if (!data) return null;
-      return { headline: String(data.headline || "").trim(), imagePrompt: String(data.imagePrompt || "").trim() };
+      return { imagePrompt: String(data.imagePrompt || "").trim() };
     } catch (e) { await new Promise((s) => setTimeout(s, 2500 * (a + 1))); }
   }
   return null;
@@ -124,10 +129,10 @@ function findFont(cfg) {
   return null;
 }
 
-function toLines(headline, title) {
-  let h = (headline || "").toUpperCase().replace(/[^A-Z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
-  if (!h) h = (title || "VIDEO").toUpperCase().replace(/[^A-Z0-9 ]+/g, " ").replace(/\s+/g, " ").trim().split(" ").slice(0, 4).join(" ");
+function toLines(hook) {
+  const h = (hook || "").toUpperCase().replace(/[^A-Z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
   const words = h.split(" ").filter(Boolean).slice(0, 5);
+  if (!words.length) return [];
   if (words.length <= 2 || h.length <= 12) return [words.join(" ")];
   let best = 1, bestDiff = 1e9;
   for (let i = 1; i < words.length; i++) {
@@ -138,14 +143,16 @@ function toLines(headline, title) {
 }
 
 async function buildLegacyThumbnail(job, cfg, workDir, outFile, deps) {
+  const hook = makeHook(job);
+  if (!hook) return null;
   const plan = await thumbnailPlan(job, cfg);
   const style = styleKeywords[job.style] ? job.style : cfg.style;
-  const subject = (plan && plan.imagePrompt) || job.title || (job.script || "").slice(0, 120);
+  const subject = (plan && plan.imagePrompt) || hook;
   const imgPrompt = buildPrompt(subject + ", dramatic, cinematic, bold, high contrast, striking, eye catching", style);
   const src = path.join(workDir, "thumb_src.jpg");
   if (!(await deps.fetchImage(imgPrompt, 9182, src, cfg))) return null;
 
-  const lines = toLines(plan && plan.headline, job.title);
+  const lines = toLines(hook);
   const font = findFont(cfg);
   const maxLen = Math.max(...lines.map((l) => l.length));
   const fontsize = maxLen <= 10 ? 122 : maxLen <= 16 ? 100 : maxLen <= 22 ? 82 : 66;

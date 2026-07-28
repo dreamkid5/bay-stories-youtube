@@ -5,15 +5,23 @@ import { spawn } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { splitScript, buildPrompt, styleKeywords, VOICES } from "./csv.mjs";
+import { splitScript, buildPrompt, styleKeywords } from "./csv.mjs";
 import { buildCharacterBible, sceneCharacterNote } from "./characters.mjs";
 import { buildSceneVisuals } from "./visuals.mjs";
 import { buildThumbnail } from "./thumbnail.mjs";
-import { presenterSeed } from "./presenter.mjs";
+import { generateUniqueFemalePresenter } from "./presenter.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const FONTS_DIR = path.join(HERE, "assets", "fonts");
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// This channel has one immutable narrator voice. Keep the compatibility helper
+// so older callers still work, but ignore every provider and voice override.
+export const LOCKED_NARRATOR_VOICE = "en-US-JennyNeural";
+
+export function femaleVoice() {
+  return LOCKED_NARRATOR_VOICE;
+}
 
 // Escape a file path for use inside the ffmpeg subtitles filter argument.
 function ffEscapePath(p) {
@@ -46,6 +54,10 @@ async function fetchImage(prompt, seed, outPath, cfg, opts = {}) {
   const w = Number(opts.width) || Number(cfg.width) || 1920;
   const h = Number(opts.height) || Number(cfg.height) || 1080;
   const attempts = Number(opts.attempts) || 6;
+  const configuredTimeoutMs = Number(process.env.CF_IMAGE_REQUEST_TIMEOUT_MS || 90000);
+  const requestTimeoutMs = Number.isFinite(configuredTimeoutMs)
+    ? Math.max(10000, configuredTimeoutMs)
+    : 90000;
   // Prompt enhancement improves the first try but adds a step that can fail. So we use
   // it only on the FIRST attempt (best quality) and drop it on retries (more reliable),
   // which lifts the success rate without losing quality when things go smoothly.
@@ -58,7 +70,7 @@ async function fetchImage(prompt, seed, outPath, cfg, opts = {}) {
     const url = cfg.imageBase + "/" + encodeURIComponent(prompt) +
       "?width=" + w + "&height=" + h + "&nologo=true" + enhance + "&model=" + cfg.imageModel + "&seed=" + s + token;
     try {
-      const r = await fetch(url);
+      const r = await fetch(url, { signal: AbortSignal.timeout(requestTimeoutMs) });
       if (r.ok) {
         const buf = Buffer.from(await r.arrayBuffer());
         if (buf.length > 1000) { await fs.writeFile(outPath, buf); return true; }
@@ -80,10 +92,10 @@ function xmlEscape(s) {
 
 async function fetchTTS(script, voice, outPath, cfg) {
   try {
-    // edge-tts: free Microsoft neural voices, no key and no card. Invoked as
-    // `python3 -m edge_tts`. Text is passed via a temp file to avoid arg limits.
+    // edge-tts: free Microsoft neural voices, no key and no card. Female voices only.
+    // Text is passed via a temp file to avoid arg limits.
     if (cfg.ttsProvider === "edge") {
-      const name = (voice && /^[a-z]{2}-[A-Z]{2}-/.test(voice)) ? voice : cfg.edgeVoice;
+      const name = femaleVoice("edge", voice, cfg);
       const txt = outPath + ".txt";
       // tts_words.py writes the mp3 AND a sidecar of per-word timings (outPath.words.json)
       // that the caption engine uses to highlight each word as it is spoken.
@@ -109,7 +121,7 @@ async function fetchTTS(script, voice, outPath, cfg) {
     }
     // Azure Speech: 500k characters a month free, no card needed
     if (cfg.ttsProvider === "azure" && cfg.azureKey) {
-      const name = voice || cfg.azureVoice;
+      const name = femaleVoice("azure", voice, cfg);
       const lang = name.slice(0, 5);
       // Wrap the narration in a warm, measured storytelling cadence (griot pace).
       const rate = cfg.azureRate || "0%";
@@ -131,7 +143,7 @@ async function fetchTTS(script, voice, outPath, cfg) {
     }
     // Google Cloud Text to Speech: large free tier, great for volume
     if (cfg.ttsProvider === "google" && cfg.googleKey) {
-      const name = voice || cfg.googleVoice;
+      const name = femaleVoice("google", voice, cfg);
       const lang = name.slice(0, 5);
       const r = await fetch("https://texttospeech.googleapis.com/v1/text:synthesize?key=" + cfg.googleKey, {
         method: "POST", headers: { "Content-Type": "application/json" },
@@ -142,7 +154,7 @@ async function fetchTTS(script, voice, outPath, cfg) {
     }
     // ElevenLabs: top quality, smaller free tier
     if (cfg.ttsProvider === "elevenlabs" && cfg.elevenKey) {
-      const voiceId = voice && /^[A-Za-z0-9]{16,}$/.test(voice) ? voice : cfg.elevenVoice;
+      const voiceId = femaleVoice("elevenlabs", voice, cfg);
       const r = await fetch("https://api.elevenlabs.io/v1/text-to-speech/" + voiceId, {
         method: "POST",
         headers: { "Content-Type": "application/json", "xi-api-key": cfg.elevenKey, "Accept": "audio/mpeg" },
@@ -153,7 +165,7 @@ async function fetchTTS(script, voice, outPath, cfg) {
     }
     // OpenAI compatible
     if (cfg.ttsKey) {
-      const v = VOICES.includes((voice || "").toLowerCase()) ? voice.toLowerCase() : cfg.ttsVoice;
+      const v = femaleVoice("openai", voice, cfg);
       const r = await fetch(cfg.ttsUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json", "Authorization": "Bearer " + cfg.ttsKey },
@@ -427,11 +439,11 @@ export async function renderJob(job, cfg, workDir, outFile) {
   //   Long videos          -> slightly longer scenes and 720p, because the image
   //                           count grows with length and a huge 1080p batch can
   //                           outrun a CI time limit on a bad day.
-  const HD_MAX_MIN = Number(process.env.CF_HD_MAX_MINUTES || 35);
+  const HD_MAX_MIN = Number(process.env.CF_HD_MAX_MINUTES || 20);
   const isShort = estMinutes <= HD_MAX_MIN;
   const targetSec = Math.max(1.5, isShort
     ? Number(process.env.CF_SHORT_SCENE_SECONDS || 4.5)
-    : (Number(cfg.sceneSeconds) || 6));
+    : (Number(cfg.sceneSeconds) || 10));
   cfg.log("  ~" + estMinutes.toFixed(0) + " min video: " + (isShort
     ? "1080p, aiming for " + targetSec + "s scenes"
     : "long video, 720p, aiming for " + targetSec + "s scenes"));
@@ -441,7 +453,7 @@ export async function renderJob(job, cfg, workDir, outFile) {
   // that would overflow the budget gets LONGER scenes instead, so the whole story is
   // still told, just with each picture held a little longer. Bounded images => bounded
   // render time => a run can never grind past a CI time limit.
-  const MAX_SCENES = Math.max(20, Number(process.env.CF_MAX_SCENES || 600));
+  const MAX_SCENES = Math.max(20, Number(process.env.CF_MAX_SCENES || 180));
   let targetWords = Math.max(3, Math.round(targetSec * wps));
   if (Math.ceil(totalWords / targetWords) > MAX_SCENES) {
     targetWords = Math.ceil(totalWords / MAX_SCENES);
@@ -471,24 +483,24 @@ export async function renderJob(job, cfg, workDir, outFile) {
     cfg.log("  over " + HD_MAX_MIN + " min: rendering at 720p so it finishes safely");
   }
 
-  // Storytime mode: a fixed presenter portrait on the left of every scene, plus
-  // karaoke captions burned on. Only for the "story" style; other styles render full-frame.
-  const storyMode = style === "story" && cfg.presenter !== false;
+  // Channel lock: every video is rendered in storytime mode with one fresh female
+  // presenter on the left. Style values and configuration must not bypass this.
+  const storyMode = true;
   let presenter = null;
   if (storyMode) {
-    const gender = "male";
-    job.gender = gender;
-    const seed = presenterSeed(job);
-    job.presenterSeed = seed;
-    const who = gender === "male"
-      ? "a friendly relatable young man in his late twenties, short neat dark hair, light stubble, plain casual modern t-shirt"
-      : "a friendly relatable young woman in her late twenties, natural shoulder-length hair, plain casual modern top";
-    const pPrompt = "cinematic photorealistic upper body portrait of " + who +
-      ", warm genuine calm expression, facing the camera, soft natural indoor lighting, softly blurred cosy home background, shallow depth of field, 35mm, highly detailed realistic skin and face, not an illustration";
-    const pPath = path.join(workDir, "presenter.jpg");
-    if (await fetchImage(pPrompt, seed, pPath, cfg, { width: 768, height: 1024 })) presenter = pPath;
-    if (presenter) { job.presenterFile = presenter; job.gender = gender; }
-    cfg.log("  presenter: " + (presenter ? gender + " (left)" : "could not generate, using full-frame scenes"));
+    const generatedPresenter = await generateUniqueFemalePresenter({
+      job,
+      cfg,
+      workDir,
+      fetchImage
+    });
+    if (!generatedPresenter || !generatedPresenter.file) {
+      throw new Error("female presenter generation failed; refusing to render without a female presenter");
+    }
+    presenter = generatedPresenter.file;
+    job.presenterFile = presenter;
+    job.gender = "female";
+    cfg.log("  presenter: new female identity " + generatedPresenter.identity + " (left)");
   }
 
   // Character bible: keep the main characters looking the same across scenes.

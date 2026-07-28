@@ -18,6 +18,7 @@ const WIN_EPOCH = 11644473600;
 const SYNTH_URL =
   "https://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1" +
   "?TrustedClientToken=" + TRUSTED_CLIENT_TOKEN;
+const LOCKED_VOICE = "en-US-JennyNeural";
 
 function xmlEscape(s) {
   return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
@@ -58,7 +59,8 @@ export async function onRequest(context) {
   try { body = await request.json(); } catch (e) { return new Response("bad json", { status: 400 }); }
   const text = (body.text || "").toString().slice(0, 6000).trim();
   if (!text) return new Response("no text", { status: 400 });
-  const voice = /^[a-z]{2}-[A-Z]{2}-/.test(body.voice) ? body.voice : "en-US-BrianNeural";
+  // The channel narrator is immutable. Ignore any voice supplied by clients.
+  const voice = LOCKED_VOICE;
   const rate = (body.rate || "-6%").toString();
   const pitch = (body.pitch || "-2Hz").toString();
 

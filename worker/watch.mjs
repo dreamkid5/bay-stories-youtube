@@ -10,7 +10,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { jobsFromCSV, slug } from "./csv.mjs";
-import { renderJob } from "./render.mjs";
+import { LOCKED_NARRATOR_VOICE, renderJob } from "./render.mjs";
 import { uploadToYouTube } from "./upload.mjs";
 import { generateSEO } from "./seo.mjs";
 
@@ -42,26 +42,27 @@ const cfg = {
   ttsUrl: process.env.CF_TTS_URL || "https://api.openai.com/v1/audio/speech",
   ttsModel: process.env.CF_TTS_MODEL || "gpt-4o-mini-tts",
   ttsVoice: process.env.CF_TTS_VOICE || "nova",
-  // edge-tts: free Microsoft neural voice, NO key, NO card. Brian narrates every video.
+  // edge-tts: free Microsoft neural voices, NO key, NO card. Female-only narration.
   // Invoked as: python3 -m edge_tts. Install once with: pip install edge-tts
   edgeCmd: process.env.CF_EDGE_CMD || "python3",
-  edgeVoice: process.env.CF_EDGE_VOICE || "en-US-BrianNeural",
+  edgeVoice: LOCKED_NARRATOR_VOICE,
   edgeRate: process.env.CF_EDGE_RATE || "-5%",
   edgePitch: process.env.CF_EDGE_PITCH || "+0Hz",
+  femaleVoice: LOCKED_NARRATOR_VOICE,
   // local voice server, free and no card
   localTtsUrl: process.env.LOCAL_TTS_URL || "",
   // premium voice providers, choose by which key is set
   azureKey: process.env.AZURE_SPEECH_KEY || "",
   azureRegion: process.env.AZURE_SPEECH_REGION || "eastus",
-  // Azure fallback uses the same male Storytime narrator.
-  azureVoice: process.env.CF_AZURE_VOICE || "en-US-BrianNeural",
+  // Nigerian English female storyteller.
+  azureVoice: process.env.CF_AZURE_VOICE || "en-NG-EzinneNeural",
   // Storytelling cadence: a measured, warm griot pace and a touch of pitch warmth.
   azureRate: process.env.CF_AZURE_RATE || "-6%",
   azurePitch: process.env.CF_AZURE_PITCH || "-2%",
   googleKey: process.env.GOOGLE_TTS_KEY || "",
-  googleVoice: process.env.CF_GOOGLE_VOICE || "en-US-Neural2-J",
+  googleVoice: process.env.CF_GOOGLE_VOICE || "en-US-Studio-O",
   elevenKey: process.env.ELEVENLABS_API_KEY || "",
-  elevenVoice: process.env.CF_ELEVEN_VOICE || "VR6AewLTigWG4xSOukaG",
+  elevenVoice: process.env.CF_ELEVEN_VOICE || "21m00Tcm4TlvDq8ikWAM",
   music: process.env.CF_MUSIC || "",
   ffmpeg: process.env.CF_FFMPEG || "ffmpeg",
   ffprobe: process.env.CF_FFPROBE || "ffprobe",
@@ -80,9 +81,13 @@ const cfg = {
   log: (m) => console.log(m)
 };
 cfg.ytUpload = process.env.CF_YT_UPLOAD === "0" ? false : !!(cfg.ytClientId && cfg.ytClientSecret && cfg.ytRefreshToken);
-// Default narration is the free Brian edge-tts voice (no key). A provider key still wins if set.
-cfg.ttsProvider = process.env.CF_TTS_PROVIDER || (cfg.localTtsUrl ? "local" : cfg.azureKey ? "azure" : cfg.googleKey ? "google" : cfg.elevenKey ? "elevenlabs" : cfg.ttsKey ? "openai" : "edge");
-cfg.ttsEnabled = cfg.ttsProvider === "edge" ? true : !!(cfg.localTtsUrl || cfg.azureKey || cfg.googleKey || cfg.elevenKey || cfg.ttsKey);
+// Automated publishing is permanently locked to Microsoft's Jenny voice.
+// Environment variables, CSV fields, and configured premium providers cannot
+// change the narrator.
+cfg.ttsProvider = "edge";
+cfg.edgeVoice = LOCKED_NARRATOR_VOICE;
+cfg.femaleVoice = LOCKED_NARRATOR_VOICE;
+cfg.ttsEnabled = true;
 // auto SEO (Claude writes titles, descriptions, tags): disabled with CF_SEO=0
 cfg.seoEnabled = process.env.CF_SEO === "0" ? false : !!cfg.anthropicKey;
 // character consistency: on by default when a Claude key is set, disable with CF_CHARACTERS=0
@@ -105,6 +110,7 @@ const log = (m) => console.log("[" + stamp() + "] " + m);
 // the next run. CF_TIME_BUDGET_MIN=0 (the default) means no limit, for local runs.
 const RUN_START = Date.now();
 const TIME_BUDGET_MIN = Number(process.env.CF_TIME_BUDGET_MIN || 0);
+const REQUIRE_INPUT = process.env.CF_REQUIRE_INPUT === "1";
 const minsElapsed = () => (Date.now() - RUN_START) / 60000;
 function outOfTime() {
   return TIME_BUDGET_MIN > 0 && minsElapsed() > TIME_BUDGET_MIN;
@@ -150,7 +156,9 @@ function jobFromText(name, text) {
 async function processCSV(file, processed) {
   const text = await fs.readFile(path.join(cfg.input, file.name), "utf8");
   const jobs = /\.txt$/i.test(file.name) ? jobFromText(file.name, text) : jobsFromCSV(text);
-  if (!jobs.length) { log("no rows in " + file.name + ", skipping"); processed.add(file.key); await saveProcessed(processed); return; }
+  if (!jobs.length) {
+    throw new Error(file.name + " is empty or contains no usable video rows");
+  }
   log("processing " + file.name + " with " + jobs.length + " video(s)");
 
   let fileOk = true;
@@ -162,10 +170,11 @@ async function processCSV(file, processed) {
       break;
     }
     const job = jobs[i];
-    // The channel uses one male narrator voice and a male presenter for every video.
-    job.gender = "male";
-    job.voice = cfg.edgeVoice;
-    log("  male narrator " + job.voice + ", male presenter");
+    // Channel rule: every video uses a female presenter and female narrator.
+    // Ignore CSV voice/gender values so a male voice cannot slip into automation.
+    job.gender = "female";
+    job.voice = cfg.femaleVoice;
+    log("  female presenter, narrator " + job.voice);
     const base = slug(job.title) || ("video_" + (i + 1));
     const outFile = path.join(cfg.output, base + ".mp4");
     const workDir = path.join(cfg.output, ".work", base);
@@ -222,26 +231,47 @@ async function processCSV(file, processed) {
       await fs.mkdir(pub, { recursive: true });
       await fs.rename(path.join(cfg.input, file.name), path.join(pub, file.name));
       log("  archived " + file.name);
-    } catch (e) { log("  archive move failed: " + e.message); }
+    } catch (e) {
+      log("  archive move failed: " + e.message);
+      fileOk = false;
+    }
   } else {
     log("  kept " + file.name + " to retry next run (a step failed)");
   }
-  processed.add(file.key);
+  if (fileOk) processed.add(file.key);
   await saveProcessed(processed);
   log("finished " + file.name);
+  return fileOk;
 }
 
 async function runOnce() {
   await ensureDirs();
   const processed = await loadProcessed();
   const news = await listNewCSVs(processed);
-  if (!news.length) { log("no new CSV files in " + cfg.input); return; }
+  if (!news.length) {
+    const message = "no new .txt or .csv scripts in " + cfg.input;
+    if (REQUIRE_INPUT) throw new Error(message + "; put a script directly in content/, not content/published/");
+    log(message);
+    return;
+  }
+  const failures = [];
   for (const f of news) {
     if (outOfTime()) {
       log("time budget reached after " + minsElapsed().toFixed(0) + " min, leaving the remaining script(s) for the next run");
       break;
     }
-    await processCSV(f, processed);
+    try {
+      const ok = await processCSV(f, processed);
+      if (!ok) failures.push(f.name);
+    } catch (error) {
+      log("failed " + f.name + ": " + error.message);
+      failures.push(f.name);
+    }
+  }
+  if (failures.length) {
+    throw new Error(
+      failures.length + " script(s) failed and were left in content/ for retry: " + failures.join(", ")
+    );
   }
 }
 
@@ -251,7 +281,7 @@ async function main() {
   log("input:  " + path.resolve(cfg.input));
   log("output: " + path.resolve(cfg.output));
   log("narration: " + (cfg.ttsEnabled ? "on, provider " + cfg.ttsProvider : "off (set AZURE_SPEECH_KEY, GOOGLE_TTS_KEY, ELEVENLABS_API_KEY, or TTS_API_KEY)"));
-  log("seo: " + (cfg.seoEnabled ? "on, Claude writes titles, descriptions, and tags" : "off (set ANTHROPIC_API_KEY to enable)"));
+  log("seo: " + (cfg.seoEnabled ? "on, Claude writes titles, descriptions, and tags" : "off"));
   log("characters: " + (cfg.anthropicKey && cfg.characters ? "on, Claude keeps main characters consistent" : "off"));
   log("scene matching: " + (cfg.anthropicKey && cfg.sceneVisuals ? "on, Claude matches each image to the narration" : "off"));
   log("thumbnails: " + (cfg.thumbnails ? "on, a bold thumbnail is made for each video" : "off"));

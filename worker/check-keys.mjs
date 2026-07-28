@@ -20,7 +20,7 @@ async function checkGoogle(key) {
   try {
     const r = await fetch("https://texttospeech.googleapis.com/v1/text:synthesize?key=" + key, {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ input: { text: "test" }, voice: { languageCode: "en-US", name: "en-US-Neural2-J" }, audioConfig: { audioEncoding: "MP3" } })
+      body: JSON.stringify({ input: { text: "test" }, voice: { languageCode: "en-US", name: "en-US-Studio-O" }, audioConfig: { audioEncoding: "MP3" } })
     });
     if (r.ok) { const j = await r.json(); return j.audioContent ? "works" : "failed, no audio returned"; }
     const t = await r.text();
@@ -30,7 +30,7 @@ async function checkGoogle(key) {
 
 async function checkAzure(key, region) {
   try {
-    const ssml = "<speak version='1.0' xml:lang='en-US'><voice name='en-US-GuyNeural'>test</voice></speak>";
+    const ssml = "<speak version='1.0' xml:lang='en-NG'><voice name='en-NG-EzinneNeural'>test</voice></speak>";
     const r = await fetch("https://" + region + ".tts.speech.microsoft.com/cognitiveservices/v1", {
       method: "POST",
       headers: { "Ocp-Apim-Subscription-Key": key, "Content-Type": "application/ssml+xml", "X-Microsoft-OutputFormat": "audio-24khz-48kbitrate-mono-mp3", "User-Agent": "creatorflow" },

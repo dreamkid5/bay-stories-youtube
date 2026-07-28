@@ -2,16 +2,18 @@ name: Publish folktales to YouTube
 
 # How it works:
 #   1. You write a folktale as a plain .txt file in the content/ folder and push it.
-#   2. This workflow renders it into a narrated, illustrated video (male Brian voice,
-#      3D folktale look), writes the SEO with Claude, and uploads it to YouTube.
+#   2. This workflow renders it with the locked Jenny voice, validates its female
+#      presenter, creates the thumbnail, and uploads it to YouTube.
 #   3. The published script is moved to content/published/ and the upload ledger
 #      (content/.cf-uploaded.json) is committed back, so a tale is never made twice.
+#   4. If a newly added script is accidentally put in content/published/, preflight
+#      safely recovers that new file before rendering instead of silently doing nothing.
 #
 # Narration is FREE via edge-tts (Microsoft Edge neural voices) — no key needed.
 #
 # Required repo secrets (Settings → Secrets and variables → Actions):
 #   YT_CLIENT_ID, YT_CLIENT_SECRET, YT_REFRESH_TOKEN   YouTube auto-upload
-#   ANTHROPIC_API_KEY                       (recommended) SEO + character consistency (Claude, ~1c/video)
+#   ANTHROPIC_API_KEY                       presenter verification only
 #   CF_IMAGE_TOKEN                          (optional) Pollinations token, higher limits
 # Optional repo variable:
 #   CF_YT_PRIVACY   public | unlisted | private   (default: private)
@@ -21,6 +23,8 @@ on:
     branches: [main, master]
     paths:
       - "content/**"
+      - "worker/**"
+      - ".github/workflows/publish.yml"
   schedule:
     # Daily at 06:00 UTC — publishes anything new sitting in content/.
     - cron: "0 6 * * *"
@@ -38,6 +42,9 @@ concurrency:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    # Leave an hour of headroom below GitHub's hard six-hour ceiling so a bad
+    # external service fails clearly instead of discarding six hours of work.
+    timeout-minutes: 300
     env:
       # True only once a YouTube channel is connected (YT_REFRESH_TOKEN secret set).
       # Until then this workflow does nothing — use the "Generate" workflow to make
@@ -46,29 +53,39 @@ jobs:
       CF_INPUT: ${{ github.workspace }}/content
       CF_OUTPUT: ${{ github.workspace }}/_render
       CF_STYLE: story
-      # Videos over 35 min: 6s scenes at 720p. Videos 35 min and under: 4.5s at 1080p.
-      CF_SCENE_SECONDS: "6"
+      # Long videos use fewer, longer scenes at 720p. This preserves every word
+      # while bounding image generation and ffmpeg work.
+      CF_SCENE_SECONDS: "10"
       # Videos at or under this many minutes get 1080p + the shorter scene length.
-      CF_HD_MAX_MINUTES: "35"
+      CF_HD_MAX_MINUTES: "20"
       CF_SHORT_SCENE_SECONDS: "4.5"
       CF_IMG_CONCURRENCY: "3"
-      # 1080p output (user preference). Fine for videos up to ~40 min within the 6-hour limit.
-      # For very long videos (50+ min) drop to 1280x720 to stay under the limit.
+      CF_IMAGE_REQUEST_TIMEOUT_MS: "90000"
+      # Short videos remain 1080p. The renderer automatically switches longer
+      # videos to 720p so normal story scripts finish reliably on GitHub runners.
       CF_WIDTH: "1920"
       CF_HEIGHT: "1080"
       # Scene budget: long scripts get LONGER scenes (never truncated) so image count
-      # stays bounded and a render always finishes well inside the 6-hour CI limit.
-      CF_MAX_SCENES: "600"
-      # Do not START another video after 2h, so even a slow one lands well under the 6h wall.
-      CF_TIME_BUDGET_MIN: "120"
-      # Voice — free male Storytime narration via edge-tts (no key, no card)
+      # stays bounded. The failed July 28 run attempted 344 scenes; 180 keeps the
+      # complete narration while cutting image and encoding work nearly in half.
+      CF_MAX_SCENES: "180"
+      # Do not start another video after 3h, leaving two hours for the current one.
+      CF_TIME_BUDGET_MIN: "180"
+      # A queued push may be superseded by an earlier serialized run that already
+      # published its script. Treat that as a clean no-op, not a false failure.
+      CF_REQUIRE_INPUT: "0"
+      # Voice — Jenny, locked via edge-tts (no key, no card)
       CF_TTS_PROVIDER: edge
-      CF_EDGE_VOICE: en-US-BrianNeural
+      CF_EDGE_VOICE: en-US-JennyNeural
       CF_EDGE_RATE: "-5%"
       CF_EDGE_PITCH: "+0Hz"
-      # Claude — character consistency + scene matching (auto-SEO disabled)
+      # Claude — restricted to mandatory presenter verification. Disabling the
+      # optional scene/SEO calls keeps API use and API-related failures minimal.
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      CF_REQUIRE_ANTHROPIC: "1"
       CF_SEO: "0"
+      CF_CHARACTERS: "0"
+      CF_SCENE_VISUALS: "0"
       CF_SEO_MODEL: claude-haiku-4-5-20251001
       # Images
       CF_IMAGE_TOKEN: ${{ secrets.CF_IMAGE_TOKEN }}
@@ -89,41 +106,62 @@ jobs:
 
       - name: Check out repository
         if: env.HAS_YT == 'true'
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
+        with:
+          # Serialized runs can wait for hours. Always process the latest branch
+          # tip when the job starts so an old queued SHA cannot upload duplicates.
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
+
+      - name: Validate inputs and recover a misplaced new script
+        if: env.HAS_YT == 'true'
+        id: preflight
+        run: node worker/preflight.mjs
+
+      - name: Restore presenter uniqueness history
+        if: env.HAS_YT == 'true' && steps.preflight.outputs.has_input == 'true'
+        uses: actions/cache@v5
+        with:
+          path: _render/.presenter-history.json
+          key: presenter-history-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            presenter-history-
 
       - name: Set up Node.js
-        if: env.HAS_YT == 'true'
-        uses: actions/setup-node@v4
+        if: env.HAS_YT == 'true' && steps.preflight.outputs.has_input == 'true'
+        uses: actions/setup-node@v6
         with:
-          node-version: "20"
+          node-version: "24"
+          package-manager-cache: false
 
       - name: Install ffmpeg
-        if: env.HAS_YT == 'true'
+        if: env.HAS_YT == 'true' && steps.preflight.outputs.has_input == 'true'
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
 
       - name: Install narration + caption deps (edge-tts, pillow)
-        if: env.HAS_YT == 'true'
+        if: env.HAS_YT == 'true' && steps.preflight.outputs.has_input == 'true'
         run: python3 -m pip install --upgrade edge-tts pillow
 
       - name: Render new folktales and upload to YouTube
-        if: env.HAS_YT == 'true'
+        if: env.HAS_YT == 'true' && steps.preflight.outputs.has_input == 'true'
         working-directory: worker
         run: node watch.mjs --once
 
       - name: Save rendered videos as a downloadable artifact
-        if: env.HAS_YT == 'true'
-        uses: actions/upload-artifact@v4
+        if: env.HAS_YT == 'true' && steps.preflight.outputs.has_input == 'true'
+        uses: actions/upload-artifact@v7
         with:
           name: folktale-videos
-          if-no-files-found: ignore
+          if-no-files-found: error
           retention-days: 14
           path: |
             _render/*.mp4
             _render/*-thumbnail.jpg
             _render/*.txt
+            _render/.presenter-history.json
 
       - name: Commit published tales and ledger
-        if: env.HAS_YT == 'true'
+        if: env.HAS_YT == 'true' && steps.preflight.outputs.has_input == 'true'
         run: |
           git config user.name  "griot-studio-bot"
           git config user.email "actions@github.com"

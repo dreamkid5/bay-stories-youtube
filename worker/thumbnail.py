@@ -16,12 +16,13 @@ except ImportError:
     sys.exit("Pillow not installed. Run: pip install pillow")
 
 # Palette sampled to match the reference thumbnail (readable on a white background).
+BASE    = (20, 20, 22)      # near-black default text
 GREEN   = (22, 176, 74)
 GOLD    = (214, 150, 0)     # the "yellow" role, but readable on white
 RED     = (224, 27, 16)
 MAGENTA = (206, 24, 178)
 BG      = (255, 255, 255)
-MIDDLE_ACCENTS = [GOLD, MAGENTA, GREEN]
+ACCENTS = [GREEN, GOLD, MAGENTA]
 
 
 def segment(text):
@@ -57,27 +58,24 @@ def chunk(segs, size=4):
 
 
 def colourise(segs):
-    """Match the reference palette and sequence: opening hook in green, quoted
-    speech in magenta, middle/twist clauses in gold or another bright accent, and
-    the final payoff in red. Never insert black-filled groups; black is outline only.
-    If there are too few clauses, colour short word-groups instead."""
+    """Assign each clause a colour, mixing base black with punchy accents like the
+    reference: quotes and 'twist' clauses (money / the final line) stand out most.
+    If there are too few clauses to look varied, colour by short word-groups instead."""
     if len(segs) < 4:
         segs = chunk(segs, 4)
-    out, middle_i = [], 0
+    out, ai = [], 0
     for i, (kind, seg) in enumerate(segs):
         is_last = (i == len(segs) - 1)
         has_money = bool(re.search(r"[$€£]|\d", seg))
         if has_money or is_last:
             colour = RED
         elif kind == "quote":
-            colour = MAGENTA
-        elif i == 0:
-            colour = GREEN
-        elif i > 0 and segs[i - 1][0] == "quote":
-            colour = GOLD
+            colour = GREEN if (i % 2 == 0) else MAGENTA
+        elif i % 2 == 1:
+            colour = BASE
         else:
-            colour = MIDDLE_ACCENTS[middle_i % len(MIDDLE_ACCENTS)]
-            middle_i += 1
+            colour = ACCENTS[ai % len(ACCENTS)]
+            ai += 1
         out.append((seg, colour))
     return out
 
@@ -172,7 +170,7 @@ def main():
             # soft shadow for depth, then the word with a thin dark outline
             draw.text((x + 2, y + 3), w, font=font, fill=(0, 0, 0))
             draw.text((x, y), w, font=font, fill=colour,
-                      stroke_width=stroke,
+                      stroke_width=(stroke if colour != BASE else 0),
                       stroke_fill=(15, 15, 18))
             x += font.getlength(w) + space
         y += line_h

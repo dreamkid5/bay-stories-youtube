@@ -2,14 +2,14 @@ name: Generate folktale videos (download only)
 
 # Use this to MAKE videos on GitHub without publishing to YouTube.
 #   Actions tab → "Generate folktale videos (download only)" → Run workflow.
-# It renders every script in content/ into a narrated, illustrated MP4 (free
-# male Brian voice + Storytime look) and attaches the videos as a downloadable
+# It renders every script in content/ into a narrated, illustrated MP4 (locked
+# Jenny voice + matching storytime look) and attaches the videos as a downloadable
 # artifact. Nothing is uploaded to YouTube and no scripts are archived, so you
 # can tweak a script and generate again.
 #
-# Optional secrets (both improve quality but are not required):
-#   ANTHROPIC_API_KEY   SEO text + character consistency
-#   CF_IMAGE_TOKEN      higher image limits
+# Secrets:
+#   ANTHROPIC_API_KEY   required only to verify the female presenter
+#   CF_IMAGE_TOKEN      optional; provides higher image-generation limits
 
 on:
   workflow_dispatch: {}
@@ -17,27 +17,32 @@ on:
 jobs:
   generate:
     runs-on: ubuntu-latest
+    timeout-minutes: 300
     env:
       CF_INPUT: ${{ github.workspace }}/content
       CF_OUTPUT: ${{ github.workspace }}/_render
       CF_STYLE: story
-      # Videos over 35 min: 6s scenes at 720p. Videos 35 min and under: 4.5s at 1080p.
-      CF_SCENE_SECONDS: "6"
+      # Long videos use fewer, longer scenes at 720p. This preserves every word
+      # while bounding image generation and ffmpeg work.
+      CF_SCENE_SECONDS: "10"
       # Videos at or under this many minutes get 1080p + the shorter scene length.
-      CF_HD_MAX_MINUTES: "35"
+      CF_HD_MAX_MINUTES: "20"
       CF_SHORT_SCENE_SECONDS: "4.5"
       CF_IMG_CONCURRENCY: "3"
-      # 1080p output (user preference). Fine for videos up to ~40 min within the 6-hour limit.
+      CF_IMAGE_REQUEST_TIMEOUT_MS: "90000"
+      # Short videos remain 1080p; longer videos switch to 720p automatically.
       CF_WIDTH: "1920"
       CF_HEIGHT: "1080"
       # Scene budget: long scripts get LONGER scenes (never truncated) so image count
       # stays bounded and a render always finishes well inside the 6-hour CI limit.
-      CF_MAX_SCENES: "600"
-      # Do not START another video after 2h, so even a slow one lands well under the 6h wall.
-      CF_TIME_BUDGET_MIN: "120"
-      # Free male Storytime narration
+      CF_MAX_SCENES: "180"
+      # Do not start another video after 3h, leaving two hours for the current one.
+      CF_TIME_BUDGET_MIN: "180"
+      # Manual generation must never pass green without producing a video.
+      CF_REQUIRE_INPUT: "1"
+      # Locked Jenny narration
       CF_TTS_PROVIDER: edge
-      CF_EDGE_VOICE: en-US-BrianNeural
+      CF_EDGE_VOICE: en-US-JennyNeural
       CF_EDGE_RATE: "-5%"
       CF_EDGE_PITCH: "+0Hz"
       # Generate only: do not upload, do not archive
@@ -45,18 +50,33 @@ jobs:
       CF_ARCHIVE: "0"
       CF_THUMBNAILS: "1"
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      CF_REQUIRE_ANTHROPIC: "1"
       CF_SEO: "0"
+      CF_CHARACTERS: "0"
+      CF_SCENE_VISUALS: "0"
       CF_SEO_MODEL: claude-haiku-4-5-20251001
       CF_IMAGE_TOKEN: ${{ secrets.CF_IMAGE_TOKEN }}
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
+
+      - name: Validate inputs and required presenter verification
+        run: node worker/preflight.mjs
+
+      - name: Restore presenter uniqueness history
+        uses: actions/cache@v5
+        with:
+          path: _render/.presenter-history.json
+          key: presenter-history-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            presenter-history-
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
-          node-version: "20"
+          node-version: "24"
+          package-manager-cache: false
 
       - name: Install ffmpeg
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
@@ -69,12 +89,13 @@ jobs:
         run: node watch.mjs --once
 
       - name: Upload finished videos
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: folktale-videos
-          if-no-files-found: warn
+          if-no-files-found: error
           retention-days: 14
           path: |
             _render/*.mp4
             _render/*-thumbnail.jpg
             _render/*.txt
+            _render/.presenter-history.json
