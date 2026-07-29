@@ -8,7 +8,8 @@ import {
   newFemalePresenterIdentity,
   newMalePresenterIdentity,
   presenterAssessmentApproved,
-  validateFemalePresenterImage
+  validateFemalePresenterImage,
+  LOCKED_PRESENTER_GENDER
 } from "./presenter.mjs";
 import {
   approvedNarratorVoice,
@@ -64,7 +65,7 @@ test("visual validation accepts only one verified white adult woman", () => {
     face_visible: true,
     presenter_framing: true
   };
-  assert.equal(presenterAssessmentApproved(approved), true);
+  assert.equal(presenterAssessmentApproved(approved, "female"), true);
 
   for (const invalid of [
     { ...approved, person_count: 2 },
@@ -75,11 +76,11 @@ test("visual validation accepts only one verified white adult woman", () => {
     { ...approved, face_visible: false },
     { ...approved, presenter_framing: false }
   ]) {
-    assert.equal(presenterAssessmentApproved(invalid), false);
+    assert.equal(presenterAssessmentApproved(invalid, "female"), false);
   }
 });
 
-test("visual validation accepts only one verified white adult man for the exception", () => {
+test("visual validation accepts only one verified white adult man for production", () => {
   const approved = {
     person_count: 1,
     adult_man: true,
@@ -165,17 +166,24 @@ test("validator outages are treated as infrastructure failures, not bad presente
   }
 });
 
-test("only the repository override can select the locked male exception", async () => {
+test("every video and thumbnail is permanently locked to a male presenter", async () => {
   const watchSource = await fs.readFile(new URL("./watch.mjs", import.meta.url), "utf8");
+  const renderSource = await fs.readFile(new URL("./render.mjs", import.meta.url), "utf8");
+  const thumbnailSource = await fs.readFile(new URL("./thumbnail.mjs", import.meta.url), "utf8");
+  const presenterSource = await fs.readFile(new URL("./presenter.mjs", import.meta.url), "utf8");
   const overrides = JSON.parse(
     await fs.readFile(new URL("../content/.cf-video-overrides.json", import.meta.url), "utf8")
   );
   assert.deepEqual(overrides["I Raised My Daughter"], {
-    presenterGender: "male",
     forceReupload: true
   });
-  assert.match(watchSource, /override\.presenterGender === "male"/);
-  assert.match(watchSource, /job\.gender = maleException \? "male" : "female"/);
+  assert.equal(LOCKED_PRESENTER_GENDER, "male");
+  assert.match(watchSource, /job\.gender = LOCKED_PRESENTER_GENDER/);
+  assert.doesNotMatch(watchSource, /override\.presenterGender/);
+  assert.match(renderSource, /const presenterGender = LOCKED_PRESENTER_GENDER/);
+  assert.doesNotMatch(renderSource, /job\.gender === "male"/);
+  assert.match(presenterSource, /const presenterGender = LOCKED_PRESENTER_GENDER/);
+  assert.doesNotMatch(thumbnailSource, /job\.gender === "male"/);
   assert.match(watchSource, /job\.voice = cfg\.narratorVoice/);
   assert.doesNotMatch(watchSource, /job\.voice\s*=\s*override/);
 });

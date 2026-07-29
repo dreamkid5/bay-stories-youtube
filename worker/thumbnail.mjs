@@ -44,16 +44,15 @@ export function makeHook(job) {
 async function buildStoryThumbnail(job, cfg, workDir, outFile, deps) {
   if (!fs.existsSync(MONTSERRAT)) return null;
 
-  // Reuse this video's presenter. If the video could not make one earlier, use
-  // the same uniqueness ledger while trying again for the thumbnail.
+  // Reuse this video's locked male presenter. If the video could not make one
+  // earlier, the generator remains male-only while trying again for the thumbnail.
   let portrait = job.presenterFile && fs.existsSync(job.presenterFile) ? job.presenterFile : null;
   if (!portrait) {
     const generated = await generateUniquePresenter({
       job,
       cfg,
       workDir,
-      fetchImage: deps.fetchImage,
-      gender: job.gender === "male" ? "male" : "female"
+      fetchImage: deps.fetchImage
     });
     portrait = generated && generated.file;
     if (portrait) job.presenterFile = portrait;

@@ -6,6 +6,7 @@ const HISTORY_FILE = ".presenter-history.json";
 const historyStores = new Map();
 const VALIDATION_PASSES = 2;
 const MAX_CANDIDATES = 12;
+export const LOCKED_PRESENTER_GENDER = "male";
 
 const HAIR = [
   "a short blonde bob",
@@ -64,7 +65,7 @@ function pick(items, byte) {
   return items[byte % items.length];
 }
 
-function newPresenterIdentity(job = {}, gender = "female") {
+function newPresenterIdentity(job = {}, gender = LOCKED_PRESENTER_GENDER) {
   const isMale = gender === "male";
   const storyFingerprint = createHash("sha256")
     .update(gender + "\n" + String(job.title || "") + "\n" + String(job.script || ""))
@@ -125,7 +126,7 @@ function imageMediaType(bytes) {
   return "image/jpeg";
 }
 
-export function presenterAssessmentApproved(data, gender = "female") {
+export function presenterAssessmentApproved(data, gender = LOCKED_PRESENTER_GENDER) {
   if (!data || Number(data.person_count) !== 1) return false;
   const correctGender = gender === "male"
     ? data.adult_man === true && data.woman_present === false
@@ -137,7 +138,7 @@ export function presenterAssessmentApproved(data, gender = "female") {
     data.presenter_framing === true;
 }
 
-async function assessPresenterImage(bytes, cfg, pass, gender = "female") {
+async function assessPresenterImage(bytes, cfg, pass, gender = LOCKED_PRESENTER_GENDER) {
   const configuredTimeoutMs = Number(process.env.CF_PRESENTER_VERIFY_TIMEOUT_MS || 60000);
   const requestTimeoutMs = Number.isFinite(configuredTimeoutMs)
     ? Math.max(10000, configuredTimeoutMs)
@@ -231,7 +232,7 @@ async function assessPresenterImage(bytes, cfg, pass, gender = "female") {
   };
 }
 
-export async function validatePresenterImage(imagePath, cfg, gender = "female") {
+export async function validatePresenterImage(imagePath, cfg, gender = LOCKED_PRESENTER_GENDER) {
   if (!cfg.anthropicKey) {
     return { approved: false, reason: "ANTHROPIC_API_KEY is required for presenter verification" };
   }
@@ -286,8 +287,10 @@ async function saveHistory(store) {
   await fs.rename(temp, store.historyPath);
 }
 
-export async function generateUniquePresenter({ job, cfg, workDir, fetchImage, gender = "female" }) {
-  const presenterGender = gender === "male" ? "male" : "female";
+export async function generateUniquePresenter({ job, cfg, workDir, fetchImage }) {
+  // Bay Stories is permanently locked to a male presenter. Caller, CSV,
+  // environment, title overrides, and thumbnail fallbacks cannot replace him.
+  const presenterGender = LOCKED_PRESENTER_GENDER;
   const store = await getHistoryStore(cfg.output || path.dirname(workDir));
   const presenterPath = path.join(workDir, "presenter.jpg");
 

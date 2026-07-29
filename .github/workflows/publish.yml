@@ -76,6 +76,9 @@ jobs:
       # Voice — Brian, permanently locked via edge-tts (no key, no card)
       CF_TTS_PROVIDER: edge
       CF_EDGE_VOICE: en-US-BrianNeural
+      # Every video and matching thumbnail use one verified male presenter.
+      # The renderer also enforces this value and ignores caller overrides.
+      CF_PRESENTER_GENDER: male
       CF_EDGE_RATE: "-5%"
       CF_EDGE_PITCH: "+0Hz"
       # Claude — restricted to mandatory presenter verification. Disabling the

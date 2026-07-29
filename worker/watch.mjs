@@ -11,6 +11,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { jobsFromCSV, slug } from "./csv.mjs";
 import { LOCKED_NARRATOR_VOICE, renderJob } from "./render.mjs";
+import { LOCKED_PRESENTER_GENDER } from "./presenter.mjs";
 import { uploadToYouTube } from "./upload.mjs";
 import { generateSEO } from "./seo.mjs";
 
@@ -184,11 +185,10 @@ async function processCSV(file, processed, videoOverrides) {
       break;
     }
     const job = jobs[i];
-    // Repository-controlled title overrides are the only way to select an approved
-    // exception. CSV fields and environment variables remain ignored.
+    // Every production video is permanently locked to a male presenter and male
+    // narrator. Overrides may request a corrected re-upload, but cannot select gender.
     const override = videoOverrides[job.title] || videoOverrides[file.name] || {};
-    const maleException = override.presenterGender === "male";
-    job.gender = maleException ? "male" : "female";
+    job.gender = LOCKED_PRESENTER_GENDER;
     job.voice = cfg.narratorVoice;
     job.forceReupload = override.forceReupload === true;
     log("  " + job.gender + " presenter, narrator " + job.voice);

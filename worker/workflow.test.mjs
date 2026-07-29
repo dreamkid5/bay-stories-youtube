@@ -33,6 +33,12 @@ for (const name of ["publish.yml", "generate.yml"]) {
     assert.match(source, /^\s*CF_EDGE_VOICE:\s*en-US-BrianNeural\s*$/m);
     assert.doesNotMatch(source, /CF_EDGE_VOICE:\s*en-US-JennyNeural/);
   });
+
+  test(`${name} visibly locks every presenter and thumbnail to male`, async () => {
+    const source = await workflow(name);
+    assert.match(source, /^\s*CF_PRESENTER_GENDER:\s*male\s*$/m);
+    assert.doesNotMatch(source, /CF_PRESENTER_GENDER:\s*female/);
+  });
 }
 
 test("publish jobs check out the latest branch tip after waiting in the queue", async () => {

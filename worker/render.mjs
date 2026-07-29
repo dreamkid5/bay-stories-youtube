@@ -9,7 +9,7 @@ import { splitScript, buildPrompt, styleKeywords } from "./csv.mjs";
 import { buildCharacterBible, sceneCharacterNote } from "./characters.mjs";
 import { buildSceneVisuals } from "./visuals.mjs";
 import { buildThumbnail } from "./thumbnail.mjs";
-import { generateUniquePresenter } from "./presenter.mjs";
+import { generateUniquePresenter, LOCKED_PRESENTER_GENDER } from "./presenter.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const FONTS_DIR = path.join(HERE, "assets", "fonts");
@@ -497,18 +497,17 @@ export async function renderJob(job, cfg, workDir, outFile) {
     cfg.log("  " + hdMaxMinutes + " min or longer: rendering at 720p so it finishes safely");
   }
 
-  // Channel lock: every video is rendered in storytime mode with one fresh female
+  // Channel lock: every video is rendered in storytime mode with one fresh male
   // presenter on the left. Style values and configuration must not bypass this.
   const storyMode = true;
   let presenter = null;
   if (storyMode) {
-    const presenterGender = job.gender === "male" ? "male" : "female";
+    const presenterGender = LOCKED_PRESENTER_GENDER;
     const generatedPresenter = await generateUniquePresenter({
       job,
       cfg,
       workDir,
-      fetchImage,
-      gender: presenterGender
+      fetchImage
     });
     if (!generatedPresenter || !generatedPresenter.file) {
       throw new Error(presenterGender + " presenter generation failed; refusing to render with the wrong presenter");
