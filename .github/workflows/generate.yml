@@ -22,12 +22,12 @@ jobs:
       CF_INPUT: ${{ github.workspace }}/content
       CF_OUTPUT: ${{ github.workspace }}/_render
       CF_STYLE: story
-      # Every story uses a five-second visual target. Resolution remains 1080p
+      # Every story uses a 5.5-second visual target. Resolution remains 1080p
       # below 35 minutes and 720p from 35 minutes upward.
       # Every narrated word is retained.
-      CF_SCENE_SECONDS: "5"
+      CF_SCENE_SECONDS: "5.5"
       CF_HD_MAX_MINUTES: "35"
-      CF_SHORT_SCENE_SECONDS: "5"
+      CF_SHORT_SCENE_SECONDS: "5.5"
       CF_IMG_CONCURRENCY: "3"
       # Bound each image request and repair missing scenes in paced parallel batches.
       # With no API key the worker automatically reduces request concurrency.
@@ -38,8 +38,9 @@ jobs:
       CF_IMAGE_ENHANCE: "0"
       CF_WIDTH: "1920"
       CF_HEIGHT: "1080"
-      # One hour at five seconds per scene is 720 individually generated images.
-      # Extra-long scripts stretch scenes rather than losing narration.
+      # One hour at 5.5 seconds per scene is about 655 individually generated
+      # images. The 720 cap leaves headroom; extra-long scripts stretch scenes
+      # rather than losing narration.
       CF_MAX_SCENES: "720"
       CF_TIME_BUDGET_MIN: "240"
       # Manual generation must never pass green without producing a video.

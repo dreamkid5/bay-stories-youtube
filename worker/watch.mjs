@@ -22,7 +22,7 @@ const cfg = {
   input: process.env.CF_INPUT || "./input",
   output: process.env.CF_OUTPUT || "./output",
   style: process.env.CF_STYLE || "story",
-  sceneSeconds: Number(process.env.CF_SCENE_SECONDS || 4.2),
+  sceneSeconds: Number(process.env.CF_SCENE_SECONDS || 5.5),
   // Ken Burns zoom strength. Subtle by default so shots feel natural, not pushed in.
   zoom: Number(process.env.CF_ZOOM || 0.06),
   // Presenter panel stays still by default (only the scene photos zoom). Set

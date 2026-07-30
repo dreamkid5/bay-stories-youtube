@@ -505,13 +505,20 @@ async function muxAudio(video, narration, music, outPath, total, cfg) {
 
 // Produce a deterministic render plan without fetching images or invoking ffmpeg.
 // This keeps the 35-minute/one-hour production contract directly testable.
-function splitIntoWordScenes(script, targetWords) {
+function splitIntoSceneCount(script, requestedSceneCount) {
   const words = script.trim().replace(/[ \t]+/g, " ").replace(/\n+/g, " ").split(/\s+/).filter(Boolean);
+  if (!words.length) return [script.trim()];
+  const sceneCount = Math.max(1, Math.min(words.length, Math.floor(requestedSceneCount) || 1));
   const scenes = [];
-  for (let i = 0; i < words.length; i += targetWords) {
-    scenes.push(words.slice(i, i + targetWords).join(" "));
+  const baseWords = Math.floor(words.length / sceneCount);
+  const extraWords = words.length % sceneCount;
+  let offset = 0;
+  for (let i = 0; i < sceneCount; i++) {
+    const wordsHere = baseWords + (i < extraWords ? 1 : 0);
+    scenes.push(words.slice(offset, offset + wordsHere).join(" "));
+    offset += wordsHere;
   }
-  return scenes.length ? scenes : [script.trim()];
+  return scenes;
 }
 
 export function planVideoScenes(script, cfg = {}, env = process.env) {
@@ -522,30 +529,33 @@ export function planVideoScenes(script, cfg = {}, env = process.env) {
   // Exactly 35 minutes belongs to the long-form 720p profile.
   const isShort = estMinutes < hdMaxMinutes;
   const targetSec = Math.max(1.5, isShort
-    ? Number(env.CF_SHORT_SCENE_SECONDS || 5)
-    : (Number(cfg.sceneSeconds) || 5));
+    ? Number(env.CF_SHORT_SCENE_SECONDS || 5.5)
+    : (Number(cfg.sceneSeconds) || 5.5));
   const maxScenes = Math.max(20, Number(env.CF_MAX_SCENES || 720));
-  let targetWords = Math.max(3, Math.round(targetSec * wps));
-  if (Math.ceil(totalWords / targetWords) > maxScenes) {
-    targetWords = Math.ceil(totalWords / maxScenes);
-  }
-  // At the five-second production cadence, fixed word groups avoid clause-length
-  // overshoot and keep the visual changes very close to the requested timing.
-  const makeScenes = targetSec <= 5
-    ? (text, words) => splitIntoWordScenes(text, words)
-    : (text, words) => splitScript(text, words);
-  let scenes = makeScenes(script, targetWords);
-  // Scenes are built from whole clauses, so they always land a little OVER the word
-  // target. Measure the real average and correct once.
-  const firstAvg = scenes.length ? totalWords / wps / scenes.length : targetSec;
-  if (firstAvg > targetSec * 1.12) {
-    targetWords = Math.max(3, Math.round(targetWords * (targetSec / firstAvg)));
-    scenes = makeScenes(script, targetWords);
-  }
-  // Enforce the scene budget by stretching scenes, never by truncating narration.
-  if (scenes.length > maxScenes) {
-    targetWords = Math.ceil(targetWords * (scenes.length / maxScenes) + 1);
-    scenes = makeScenes(script, targetWords);
+  let scenes;
+  if (targetSec <= 5.5) {
+    // Distribute whole words across the exact number of scenes required by the
+    // requested cadence. This avoids clause-length overshoot while allowing a
+    // fractional target such as 5.5 seconds to remain accurate on average.
+    const desiredScenes = Math.max(1, Math.ceil(totalWords / (targetSec * wps)));
+    scenes = splitIntoSceneCount(script, Math.min(maxScenes, desiredScenes));
+  } else {
+    let targetWords = Math.max(3, Math.round(targetSec * wps));
+    if (Math.ceil(totalWords / targetWords) > maxScenes) {
+      targetWords = Math.ceil(totalWords / maxScenes);
+    }
+    scenes = splitScript(script, targetWords);
+    // Clause-based scenes can land over their target. Correct once, then enforce
+    // the scene budget by stretching scenes rather than truncating narration.
+    const firstAvg = scenes.length ? totalWords / wps / scenes.length : targetSec;
+    if (firstAvg > targetSec * 1.12) {
+      targetWords = Math.max(3, Math.round(targetWords * (targetSec / firstAvg)));
+      scenes = splitScript(script, targetWords);
+    }
+    if (scenes.length > maxScenes) {
+      targetWords = Math.ceil(targetWords * (scenes.length / maxScenes) + 1);
+      scenes = splitScript(script, targetWords);
+    }
   }
   const avgSec = scenes.length ? (totalWords / wps / scenes.length) : targetSec;
   return { scenes, totalWords, estMinutes, isShort, targetSec, maxScenes, avgSec, hdMaxMinutes };

@@ -85,7 +85,7 @@ In a CSV, the `voice` column overrides the default per row. For Google use a voi
 | `CF_INPUT` | `./input` | Folder to watch for CSV files |
 | `CF_OUTPUT` | `./output` | Folder for finished videos |
 | `CF_STYLE` | `watercolor` | Default art style when a row leaves it blank |
-| `CF_SCENE_SECONDS` | `4` | Seconds per scene when there is no narration |
+| `CF_SCENE_SECONDS` | `5.5` | Target seconds per narrated scene |
 | `CF_IMAGE_BASE` | Pollinations prompt endpoint | Image model base URL |
 | `CF_IMAGE_MODEL` | `flux` | Image model name |
 | `CF_MUSIC` | empty | Path to a shared music file for rows without their own |
