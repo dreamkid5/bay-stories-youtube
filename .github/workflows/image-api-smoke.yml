@@ -1,0 +1,131 @@
+name: Test authenticated image generation
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CF_IMAGE_TOKEN: ${{ secrets.CF_IMAGE_TOKEN }}
+
+    steps:
+      - name: Generate and validate 10 authenticated images
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require("node:fs/promises");
+          const path = require("node:path");
+
+          const token = process.env.CF_IMAGE_TOKEN || "";
+          if (!token) {
+            throw new Error("CF_IMAGE_TOKEN is not configured");
+          }
+
+          const prompts = [
+            "an adult daughter discovers vineyard inheritance papers were transferred without her consent",
+            "an older mother privately hands vineyard property documents to her favored adult daughter",
+            "a shocked adult woman stands between rows of grapevines at golden hour",
+            "two adult sisters confront each other outside a contemporary vineyard farmhouse",
+            "a family lawyer reviews disputed inheritance documents in a modern office",
+            "an adult woman walks alone through a vineyard after learning of a family betrayal",
+            "a tense family meeting around a wooden table with property documents",
+            "an adult daughter points to her name on a vineyard inheritance deed",
+            "a mother and two adult daughters face an emotional disagreement in a vineyard",
+            "an adult woman looks determined while holding recovered vineyard documents"
+          ];
+          const style = [
+            "cinematic photorealistic photograph",
+            "modern real people in contemporary settings",
+            "candid emotional storytelling moment",
+            "natural soft lighting",
+            "shallow depth of field",
+            "warm 35mm film colour grade",
+            "highly detailed realistic faces and skin",
+            "believable and lifelike film still",
+            "not an illustration",
+            "not a drawing",
+            "not a cartoon",
+            "no text or words in the image"
+          ].join(", ");
+
+          function isImage(buffer) {
+            if (buffer.length <= 1000) return false;
+            const jpeg = buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff;
+            const png = buffer[0] === 0x89 && buffer[1] === 0x50 &&
+              buffer[2] === 0x4e && buffer[3] === 0x47;
+            const webp = buffer.subarray(0, 4).toString("ascii") === "RIFF" &&
+              buffer.subarray(8, 12).toString("ascii") === "WEBP";
+            return jpeg || png || webp;
+          }
+
+          async function generate(prompt, index) {
+            for (let attempt = 0; attempt < 3; attempt++) {
+              const params = new URLSearchParams({
+                model: "zimage",
+                width: "1024",
+                height: "576",
+                seed: String(7000 + index * 101 + attempt * 10007)
+              });
+              const url = "https://gen.pollinations.ai/image/" +
+                encodeURIComponent(prompt + ", " + style) + "?" + params;
+              try {
+                const response = await fetch(url, {
+                  headers: { Authorization: "Bearer " + token },
+                  signal: AbortSignal.timeout(60000)
+                });
+                if (response.ok) {
+                  const buffer = Buffer.from(await response.arrayBuffer());
+                  if (isImage(buffer)) {
+                    const file = path.join("_smoke", "scene-" +
+                      String(index + 1).padStart(2, "0") + ".jpg");
+                    await fs.writeFile(file, buffer);
+                    console.log("validated image " + (index + 1) + "/10 (" +
+                      buffer.length + " bytes)");
+                    return;
+                  }
+                }
+                if (![408, 429, 500, 502, 503, 504].includes(response.status)) {
+                  throw new Error("non-retryable image API status " + response.status);
+                }
+                const retryAfter = Number(response.headers.get("retry-after") || 0);
+                await new Promise((resolve) => setTimeout(
+                  resolve,
+                  retryAfter > 0 ? Math.min(60000, retryAfter * 1000) : 5000 * (attempt + 1)
+                ));
+              } catch (error) {
+                if (attempt === 2) throw error;
+                await new Promise((resolve) => setTimeout(resolve, 5000 * (attempt + 1)));
+              }
+            }
+            throw new Error("image " + (index + 1) + " failed after retries");
+          }
+
+          async function main() {
+            await fs.mkdir("_smoke", { recursive: true });
+            for (let index = 0; index < prompts.length; index++) {
+              await generate(prompts[index], index);
+            }
+            const files = await fs.readdir("_smoke");
+            if (files.length !== 10) {
+              throw new Error("expected 10 validated images, found " + files.length);
+            }
+            console.log("authenticated image smoke test passed: 10/10");
+          }
+          main().catch((error) => {
+            console.error("authenticated image smoke test failed: " + error.message);
+            process.exitCode = 1;
+          });
+          NODE
+
+      - name: Upload validated smoke-test images
+        uses: actions/upload-artifact@v7
+        with:
+          name: authenticated-image-smoke
+          if-no-files-found: error
+          retention-days: 3
+          path: _smoke/*.jpg
