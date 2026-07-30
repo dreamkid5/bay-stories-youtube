@@ -24,7 +24,11 @@ for (const name of ["publish.yml", "generate.yml"]) {
     assert.equal(quotedNumber(source, "CF_SHORT_SCENE_SECONDS"), 5);
     assert.equal(quotedNumber(source, "CF_SCENE_SECONDS"), 5);
     assert.equal(quotedNumber(source, "CF_MAX_SCENES"), 720);
-    assert.ok(quotedNumber(source, "CF_IMAGE_REQUEST_TIMEOUT_MS") <= 90000);
+    assert.equal(quotedNumber(source, "CF_IMAGE_REQUEST_TIMEOUT_MS"), 45000);
+    assert.equal(quotedNumber(source, "CF_IMAGE_MIN_INTERVAL_MS"), 750);
+    assert.equal(quotedNumber(source, "CF_IMG_REPAIR_CONCURRENCY"), 2);
+    assert.equal(quotedNumber(source, "CF_IMG_REPAIR_ROUNDS"), 4);
+    assert.equal(quotedNumber(source, "CF_IMAGE_ENHANCE"), 0);
     assert.match(source, /^\s*timeout-minutes:\s*350\s*$/m);
   });
 

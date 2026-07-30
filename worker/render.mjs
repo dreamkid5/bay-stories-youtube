@@ -54,39 +54,116 @@ function probeDuration(file, cfg) {
 }
 
 // ---------- asset fetching ----------
-async function fetchImage(prompt, seed, outPath, cfg, opts = {}) {
-  const token = cfg.imageToken ? "&token=" + encodeURIComponent(cfg.imageToken) : "";
+let imageCooldownUntil = 0;
+let imageNextRequestAt = 0;
+
+export function validImageBuffer(buf) {
+  if (!Buffer.isBuffer(buf) || buf.length <= 1000) return false;
+  const jpeg = buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff;
+  const png = buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47;
+  const webp = buf.slice(0, 4).toString("ascii") === "RIFF" &&
+    buf.slice(8, 12).toString("ascii") === "WEBP";
+  return jpeg || png || webp;
+}
+
+export function effectiveImageConcurrency(requested, hasToken) {
+  const configured = Math.max(1, Number(requested) || 2);
+  return hasToken ? configured : Math.min(2, configured);
+}
+
+export function repairImageSize(round, cfg = {}) {
+  const width = Number(cfg.width) || 1920;
+  const height = Number(cfg.height) || 1080;
+  const targetWidth = round >= 3 ? 768 : 1024;
+  if (width <= targetWidth) return {};
+  return {
+    width: targetWidth,
+    height: Math.max(1, Math.round(targetWidth * height / width))
+  };
+}
+
+async function waitForImageRequestSlot(cfg) {
+  const configured = Number(process.env.CF_IMAGE_MIN_INTERVAL_MS);
+  const minIntervalMs = Number.isFinite(configured)
+    ? Math.max(0, configured)
+    : (cfg.imageToken ? 100 : 750);
+  const now = Date.now();
+  const readyAt = Math.max(now, imageCooldownUntil, imageNextRequestAt);
+  imageNextRequestAt = readyAt + minIntervalMs;
+  if (readyAt > now) await sleep(readyAt - now);
+}
+
+function retryAfterMs(response, attempt) {
+  const raw = response.headers.get("retry-after") || "";
+  const seconds = Number(raw);
+  if (Number.isFinite(seconds) && seconds > 0) return Math.min(60000, seconds * 1000);
+  return Math.min(30000, 3000 * (2 ** attempt));
+}
+
+export async function fetchImage(prompt, seed, outPath, cfg, opts = {}) {
+  const base = String(cfg.imageBase || (cfg.imageToken
+    ? "https://gen.pollinations.ai/image"
+    : "https://image.pollinations.ai/prompt")).replace(/\/+$/, "");
+  const unified = /(^|\/\/)gen\.pollinations\.ai(?:\/|$)/i.test(base);
   const w = Number(opts.width) || Number(cfg.width) || 1920;
   const h = Number(opts.height) || Number(cfg.height) || 1080;
-  const attempts = Number(opts.attempts) || 6;
-  const configuredTimeoutMs = Number(process.env.CF_IMAGE_REQUEST_TIMEOUT_MS || 90000);
+  const attempts = Math.max(1, Number(opts.attempts) || 3);
+  const configuredTimeoutMs = Number(process.env.CF_IMAGE_REQUEST_TIMEOUT_MS || 45000);
   const requestTimeoutMs = Number.isFinite(configuredTimeoutMs)
     ? Math.max(10000, configuredTimeoutMs)
-    : 90000;
+    : 45000;
   // Prompt enhancement improves the first try but adds a step that can fail. So we use
   // it only on the FIRST attempt (best quality) and drop it on retries (more reliable),
   // which lifts the success rate without losing quality when things go smoothly.
-  const enhanceOn = opts.enhance !== undefined ? opts.enhance : (cfg.imageEnhance !== false);
+  const enhanceOn = opts.enhance !== undefined ? opts.enhance : cfg.imageEnhance === true;
   for (let attempt = 0; attempt < attempts; attempt++) {
     // Vary the seed on every attempt so a retry generates a genuinely NEW image for
     // this scene, rather than re-requesting the same one that just failed.
     const s = seed + attempt * 104729;
-    const enhance = (enhanceOn && attempt === 0) ? "&enhance=true" : "";
-    const url = cfg.imageBase + "/" + encodeURIComponent(prompt) +
-      "?width=" + w + "&height=" + h + "&nologo=true" + enhance + "&model=" + cfg.imageModel + "&seed=" + s + token;
+    const params = new URLSearchParams({
+      width: String(w),
+      height: String(h),
+      model: String(cfg.imageModel || (unified ? "zimage" : "flux")),
+      seed: String(s)
+    });
+    if (!unified) params.set("nologo", "true");
+    if (enhanceOn && attempt === 0 && !unified) params.set("enhance", "true");
+    if (cfg.imageToken && !unified) params.set("token", cfg.imageToken);
+    const url = base + "/" + encodeURIComponent(prompt) + "?" + params.toString();
+    const headers = cfg.imageToken && unified
+      ? { Authorization: "Bearer " + cfg.imageToken }
+      : {};
     try {
-      const r = await fetch(url, { signal: AbortSignal.timeout(requestTimeoutMs) });
+      await waitForImageRequestSlot(cfg);
+      const r = await fetch(url, {
+        headers,
+        signal: AbortSignal.timeout(requestTimeoutMs)
+      });
       if (r.ok) {
         const buf = Buffer.from(await r.arrayBuffer());
-        if (buf.length > 1000) { await fs.writeFile(outPath, buf); return true; }
-      } else if (r.status === 429 || r.status === 503) {
-        // rate limited or busy, wait longer and try again
-        const ra = parseInt(r.headers.get("retry-after") || "0", 10);
-        await sleep(ra > 0 ? Math.min(60000, ra * 1000) : Math.min(45000, 6000 * (attempt + 1)));
+        if (validImageBuffer(buf)) {
+          await fs.writeFile(outPath, buf);
+          return true;
+        }
+      } else if ([408, 429, 500, 502, 503, 504].includes(r.status)) {
+        // Coordinate a shared cooldown so concurrent workers do not stampede a
+        // rate-limited or temporarily unavailable image service.
+        imageCooldownUntil = Math.max(
+          imageCooldownUntil,
+          Date.now() + retryAfterMs(r, attempt)
+        );
         continue;
+      } else {
+        // Authentication, budget, content, and malformed-request errors are not
+        // helped by repeating the exact request several more times.
+        return false;
       }
-    } catch (e) { /* network hiccup, retry */ }
-    await sleep(2500 * (attempt + 1));
+    } catch (e) {
+      imageCooldownUntil = Math.max(
+        imageCooldownUntil,
+        Date.now() + Math.min(15000, 2000 * (attempt + 1))
+      );
+    }
   }
   return false;
 }
@@ -539,44 +616,84 @@ export async function renderJob(job, cfg, workDir, outFile) {
     (visuals && visuals[i]) ? visuals[i] : (s + sceneCharacterNote(s, bible, charState)));
 
   const results = new Array(scenes.length).fill(null);
-  const CONC = Math.max(1, Number(process.env.CF_IMG_CONCURRENCY || 2));
+  const CONC = effectiveImageConcurrency(
+    process.env.CF_IMG_CONCURRENCY || 2,
+    !!cfg.imageToken
+  );
+  const firstPassAttempts = cfg.imageToken ? 3 : 2;
   let next = 0, done = 0;
   async function imgWorker() {
     while (true) {
       const i = next++;
       if (i >= scenes.length) return;
       const p = path.join(workDir, "img" + i + ".jpg");
-      if (await fetchImage(buildPrompt(prompts[i], style), 3000 + i * 7, p, cfg)) results[i] = p;
+      if (await fetchImage(buildPrompt(prompts[i], style), 3000 + i * 7, p, cfg, {
+        attempts: firstPassAttempts
+      })) results[i] = p;
       done++;
       if (done % 20 === 0 || done === scenes.length) cfg.log("  images " + done + "/" + scenes.length);
     }
   }
   await Promise.all(Array.from({ length: Math.min(CONC, scenes.length) }, imgWorker));
 
-  // Regeneration pass: any scene whose image failed is generated fresh, with a NEW
-  // seed each time (never a reused neighbour). Runs one at a time to be gentle on the
-  // image service; later rounds fall back to 720p, which it almost never refuses, so
-  // every scene ends up with its OWN generated picture.
-  const repairRounds = Number(process.env.CF_IMG_REPAIR_ROUNDS || 8);
+  // Regeneration pass: retry only missing scenes with fresh seeds, bounded attempts,
+  // paced parallel workers, and progressively smaller source images. The final video
+  // remains 720p/1080p; ffmpeg scales these repair images to the output frame.
+  const repairRounds = Math.max(1, Number(process.env.CF_IMG_REPAIR_ROUNDS || 4));
+  const repairConcurrency = effectiveImageConcurrency(
+    process.env.CF_IMG_REPAIR_CONCURRENCY || 2,
+    !!cfg.imageToken
+  );
   for (let round = 1; round <= repairRounds; round++) {
     const missing = [];
     for (let i = 0; i < scenes.length; i++) if (!results[i]) missing.push(i);
     if (!missing.length) break;
-    // After the first couple of rounds, drop to 720p, which the service almost never
-    // refuses, so stragglers still get their own freshly generated picture quickly.
-    const lowRes = round > 2 ? { width: 1280, height: 720 } : {};
-    cfg.log("  regenerating " + missing.length + " image(s) (round " + round + (round > 2 ? ", 720p" : "") + ")");
-    for (const i of missing) {
-      const p = path.join(workDir, "img" + i + ".jpg");
-      const seed = 500000 + i * 131 + round * 91193;
-      // retries skip enhance for reliability
-      if (await fetchImage(buildPrompt(prompts[i], style), seed, p, cfg, { ...lowRes, attempts: 4, enhance: false })) results[i] = p;
+    const repairSize = repairImageSize(round, cfg);
+    const repairLabel = repairSize.width
+      ? ", " + repairSize.width + "x" + repairSize.height
+      : "";
+    cfg.log("  regenerating " + missing.length + " image(s) (round " + round + repairLabel + ")");
+    let repairNext = 0;
+    let repairDone = 0;
+    let repaired = 0;
+    async function repairWorker() {
+      while (true) {
+        const item = repairNext++;
+        if (item >= missing.length) return;
+        const i = missing[item];
+        const p = path.join(workDir, "img" + i + ".jpg");
+        const seed = 500000 + i * 131 + round * 91193;
+        if (await fetchImage(buildPrompt(prompts[i], style), seed, p, cfg, {
+          ...repairSize,
+          attempts: cfg.imageToken ? 2 : 1,
+          enhance: false
+        })) {
+          results[i] = p;
+          repaired++;
+        }
+        repairDone++;
+        if (repairDone % 20 === 0 || repairDone === missing.length) {
+          cfg.log("  repair round " + round + ": " + repairDone + "/" + missing.length +
+            " checked, " + repaired + " recovered");
+        }
+      }
     }
+    await Promise.all(
+      Array.from({ length: Math.min(repairConcurrency, missing.length) }, repairWorker)
+    );
+    const remaining = results.filter((result) => !result).length;
+    cfg.log("  repair round " + round + " complete: " + repaired +
+      " recovered, " + remaining + " remaining");
   }
   const imgs = results.filter(Boolean);
   if (!imgs.length) throw new Error("no images were generated");
   const stillMissing = results.filter((r) => !r).length;
-  if (stillMissing) cfg.log("  note: " + stillMissing + " scene(s) could not get an image and will be skipped");
+  if (stillMissing) {
+    throw new Error(
+      stillMissing + " scene image(s) are still missing after bounded repairs; " +
+      "refusing to skip narrated scenes"
+    );
+  }
 
   let music = null;
   if (job.music) music = await fetchMusic(job.music, path.join(workDir, "music.bin"));

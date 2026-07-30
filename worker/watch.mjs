@@ -34,11 +34,12 @@ const cfg = {
   crf: Number(process.env.CF_CRF || 20),
   // Words per second, used only to estimate how many words make one ~target-second scene.
   wps: Number(process.env.CF_WPS || 2.4),
-  imageBase: process.env.CF_IMAGE_BASE || "https://image.pollinations.ai/prompt",
-  imageModel: process.env.CF_IMAGE_MODEL || "flux",
+  imageBase: process.env.CF_IMAGE_BASE || "",
+  imageModel: process.env.CF_IMAGE_MODEL || "",
   imageToken: process.env.CF_IMAGE_TOKEN || "",
-  // Prompt enhancement: nicer first try, but a bit more likely to fail. CF_IMAGE_ENHANCE=0 to disable.
-  imageEnhance: process.env.CF_IMAGE_ENHANCE === "0" ? false : true,
+  // Enhancement adds another provider-side step and is disabled by default for
+  // high-volume production. Set CF_IMAGE_ENHANCE=1 only for small manual jobs.
+  imageEnhance: process.env.CF_IMAGE_ENHANCE === "1",
   ttsKey: process.env.TTS_API_KEY || "",
   ttsUrl: process.env.CF_TTS_URL || "https://api.openai.com/v1/audio/speech",
   ttsModel: process.env.CF_TTS_MODEL || "gpt-4o-mini-tts",
@@ -88,6 +89,12 @@ cfg.ttsProvider = "edge";
 cfg.edgeVoice = LOCKED_NARRATOR_VOICE;
 cfg.narratorVoice = LOCKED_NARRATOR_VOICE;
 cfg.ttsEnabled = true;
+// Pollinations' current unified endpoint uses Bearer authentication. Keep the
+// legacy public endpoint as a paced fallback when no key has been configured.
+cfg.imageBase = cfg.imageBase || (cfg.imageToken
+  ? "https://gen.pollinations.ai/image"
+  : "https://image.pollinations.ai/prompt");
+cfg.imageModel = cfg.imageModel || (cfg.imageToken ? "zimage" : "flux");
 // auto SEO (Claude writes titles, descriptions, tags): disabled with CF_SEO=0
 cfg.seoEnabled = process.env.CF_SEO === "0" ? false : !!cfg.anthropicKey;
 // character consistency: on by default when a Claude key is set, disable with CF_CHARACTERS=0
@@ -306,6 +313,9 @@ async function main() {
   log("seo: " + (cfg.seoEnabled ? "on, Claude writes titles, descriptions, and tags" : "off"));
   log("characters: " + (cfg.anthropicKey && cfg.characters ? "on, Claude keeps main characters consistent" : "off"));
   log("scene matching: " + (cfg.anthropicKey && cfg.sceneVisuals ? "on, Claude matches each image to the narration" : "off"));
+  log("image generation: " + (cfg.imageToken
+    ? "authenticated unified API with bounded retries"
+    : "paced public fallback (set CF_IMAGE_TOKEN for the most reliable high-volume runs)"));
   log("thumbnails: " + (cfg.thumbnails ? "on, a bold thumbnail is made for each video" : "off"));
   log("youtube: " + (cfg.ytUpload ? "on, privacy " + cfg.ytPrivacy : "off (set YT_CLIENT_ID, YT_CLIENT_SECRET, YT_REFRESH_TOKEN to enable)"));
   await runOnce();
