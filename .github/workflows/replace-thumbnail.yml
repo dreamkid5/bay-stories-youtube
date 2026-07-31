@@ -1,0 +1,40 @@
+name: Replace an existing YouTube thumbnail
+
+on:
+  workflow_dispatch:
+    inputs:
+      video_id:
+        description: Existing YouTube video ID
+        required: true
+        type: string
+      thumbnail_path:
+        description: Repository path under worker/assets/replacement-thumbnails
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  replace:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
+      YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
+      YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
+      VIDEO_ID: ${{ inputs.video_id }}
+      THUMBNAIL_PATH: ${{ inputs.thumbnail_path }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          package-manager-cache: false
+
+      - name: Replace thumbnail on the existing video
+        run: node worker/replace-thumbnail.mjs "$VIDEO_ID" "$THUMBNAIL_PATH"

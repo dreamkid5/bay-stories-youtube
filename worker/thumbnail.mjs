@@ -16,28 +16,73 @@ const MONTSERRAT = path.join(FONTS_DIR, "Montserrat-ExtraBold.ttf");
 // Anton: a heavy condensed display font, used only by the legacy fallback.
 const ANTON = path.join(FONTS_DIR, "Anton-Regular.ttf");
 
-// The hook that goes on the thumbnail: the opening of the story, trimmed to a punchy
-// length that ends on a sentence boundary where possible.
-export function makeHook(job) {
-  // Thumbnail text may come only from an explicit hook or the opening hook of the
-  // script. Never substitute the title, SEO copy, or an AI-written headline.
-  let t = String(job.hook || job.script || "").replace(/\s+/g, " ").trim();
-  if (!t) return "";
-  const words = t.split(" ");
-  if (words.length > 46) t = words.slice(0, 46).join(" ") + "...";
-  // prefer to end on a full sentence if one lands reasonably far in
-  const m = t.match(/^[\s\S]*?[.!?…](?=\s|$)/g);
-  if (m) {
-    let acc = "";
-    for (const s of m) {
-      const next = (acc ? acc + " " : "") + s.trim();
-      if (next.split(" ").length > 46) break;
-      acc = next;
-      if (acc.split(" ").length >= 18) break;
-    }
-    if (acc.split(" ").length >= 10) t = acc;
+const HOOK_MIN_WORDS = 42;
+const HOOK_MAX_WORDS = 70;
+
+function wordCount(text) {
+  return String(text || "").trim().split(/\s+/).filter(Boolean).length;
+}
+
+function trimHook(text, maxWords = HOOK_MAX_WORDS) {
+  const clean = String(text || "").replace(/\s+/g, " ").trim();
+  if (!clean || wordCount(clean) <= maxWords) return clean;
+
+  const sentences = clean.match(/[^.!?…]+[.!?…]+(?:["'”’])?(?=\s|$)/g) || [];
+  let complete = "";
+  for (const sentence of sentences) {
+    const next = (complete ? complete + " " : "") + sentence.trim();
+    if (wordCount(next) > maxWords) break;
+    complete = next;
   }
-  return t.trim();
+  if (wordCount(complete) >= HOOK_MIN_WORDS) return complete;
+  return clean.split(/\s+/).slice(0, maxWords).join(" ") + "...";
+}
+
+function dramaticScore(text) {
+  const t = String(text || "").toLowerCase();
+  const highImpact = t.match(/\b(?:affair|arrested|betray(?:ed|al)?|bulldoz(?:e|ed|ing)|caught|check|court|debt|destroy(?:ed|ing)?|divorce(?:d)?|excavator|fired|inherit(?:ed|ance)?|killed|legally|lied|mine|money|police|replaced|ripped|screamed|secret|sold|stole|stolen|tearing|threw|thrown)\b/g) || [];
+  const conflict = t.match(/\b(?:but|husband|mother|sister|stranger|until|wife)\b/g) || [];
+  const quotedSpeech = /["“][^"”]+["”]/.test(text) ? 2 : 0;
+  const moneyOrNumber = /[$€£]|\b\d[\d,.]*\b/.test(text) ? 2 : 0;
+  return highImpact.length * 4 + conflict.length + quotedSpeech + moneyOrNumber;
+}
+
+function openingStoryHook(script) {
+  const paragraphs = String(script || "")
+    .split(/\n\s*\n/)
+    .map((paragraph) => paragraph.replace(/\s+/g, " ").trim())
+    .filter(Boolean)
+    .slice(0, 5);
+  if (!paragraphs.length) return "";
+
+  let bestIndex = 0;
+  let bestScore = dramaticScore(paragraphs[0]);
+  for (let i = 1; i < paragraphs.length; i++) {
+    const score = dramaticScore(paragraphs[i]) - i * 0.25;
+    if (score > bestScore) {
+      bestIndex = i;
+      bestScore = score;
+    }
+  }
+
+  // A strong opening paragraph is the real hook even when the writer begins with
+  // quiet scene setting. This prevents lyrical setup from becoming weak copy.
+  const selectedIndex = bestScore >= 4 ? bestIndex : 0;
+  let selected = paragraphs[selectedIndex];
+  for (let i = selectedIndex + 1; wordCount(selected) < HOOK_MIN_WORDS && i < paragraphs.length; i++) {
+    selected += " " + paragraphs[i];
+  }
+  return trimHook(selected);
+}
+
+// Thumbnail text may come only from an explicit hook or the opening hook of the
+// script. Never substitute the title, SEO copy, or an AI-written headline. Plain
+// text stories have no hook field, so choose the strongest opening paragraph and
+// keep enough wording to match the user's dense storytime reference.
+export function makeHook(job) {
+  if (String(job.hook || "").trim()) return trimHook(job.hook);
+  if (String(job.script || "").trim()) return openingStoryHook(job.script);
+  return "";
 }
 
 // The reference-style thumbnail: presenter on the right, coloured hook on the left.

@@ -52,6 +52,40 @@ async function getAccessToken(cfg) {
   return j.access_token;
 }
 
+async function setThumbnailWithToken(token, videoId, thumbnailFile) {
+  if (!/^[A-Za-z0-9_-]{11}$/.test(String(videoId || ""))) {
+    throw new Error("invalid YouTube video id");
+  }
+  const img = await fs.readFile(thumbnailFile);
+  if (img.length > 2 * 1024 * 1024) {
+    throw new Error("thumbnail exceeds YouTube's 2 MB limit");
+  }
+  const ext = path.extname(thumbnailFile).toLowerCase();
+  const contentType = ext === ".png" ? "image/png" : "image/jpeg";
+  const th = await fetch("https://www.googleapis.com/upload/youtube/v3/thumbnails/set?videoId=" + videoId, {
+    method: "POST",
+    headers: {
+      "Authorization": "Bearer " + token,
+      "Content-Type": contentType,
+      "Content-Length": String(img.length)
+    },
+    body: img
+  });
+  if (!th.ok) {
+    throw new Error("thumbnail replacement failed: " + th.status + " " + (await th.text()).slice(0, 200));
+  }
+}
+
+export async function replaceYouTubeThumbnail(videoId, thumbnailFile, cfg) {
+  if (!cfg.ytClientId || !cfg.ytClientSecret || !cfg.ytRefreshToken) {
+    throw new Error("YouTube OAuth credentials are not configured");
+  }
+  const token = await getAccessToken(cfg);
+  await setThumbnailWithToken(token, videoId, thumbnailFile);
+  cfg.log && cfg.log("thumbnail replaced: https://youtu.be/" + videoId);
+  return videoId;
+}
+
 function buildDescription(job, cfg) {
   // prefer the Claude generated SEO description, fall back to the script
   const base = (job.seoDescription || job.script || "").trim();
@@ -177,14 +211,8 @@ export async function uploadToYouTube(file, job, cfg) {
   // Needs a channel that is allowed to set custom thumbnails; failures are non fatal.
   if (videoId && job.thumbnailFile) {
     try {
-      const img = await fs.readFile(job.thumbnailFile);
-      const th = await fetch("https://www.googleapis.com/upload/youtube/v3/thumbnails/set?videoId=" + videoId, {
-        method: "POST",
-        headers: { "Authorization": "Bearer " + token, "Content-Type": "image/jpeg", "Content-Length": String(img.length) },
-        body: img
-      });
-      if (th.ok) cfg.log("  custom thumbnail set");
-      else cfg.log("  thumbnail not set: " + th.status + " (channel may need to be verified)");
+      await setThumbnailWithToken(token, videoId, job.thumbnailFile);
+      cfg.log("  custom thumbnail set");
     } catch (e) { cfg.log("  thumbnail not set: " + e.message); }
   }
   return videoId;

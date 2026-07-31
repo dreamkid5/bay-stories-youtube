@@ -52,3 +52,12 @@ test("publish jobs check out the latest branch tip after waiting in the queue", 
   assert.equal(quotedNumber(source, "CF_MAX_FILES_PER_RUN"), 1);
   assert.doesNotMatch(source, /\[skip ci\]/);
 });
+
+test("thumbnail replacement uses the existing YouTube OAuth route without re-uploading video", async () => {
+  const source = await workflow("replace-thumbnail.yml");
+  assert.match(source, /video_id:/);
+  assert.match(source, /thumbnail_path:/);
+  assert.match(source, /YT_REFRESH_TOKEN:\s*\$\{\{\s*secrets\.YT_REFRESH_TOKEN\s*\}\}/);
+  assert.match(source, /node worker\/replace-thumbnail\.mjs/);
+  assert.doesNotMatch(source, /watch\.mjs|videos\.insert|Render folktales/);
+});
