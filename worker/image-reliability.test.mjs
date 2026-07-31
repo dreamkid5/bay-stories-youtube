@@ -7,6 +7,8 @@ import test from "node:test";
 import {
   effectiveImageConcurrency,
   fetchImage,
+  imageAttemptBudget,
+  isRetryableImageStatus,
   repairImageSize,
   validImageBuffer
 } from "./render.mjs";
@@ -34,6 +36,22 @@ test("unauthenticated image traffic is capped while keyed traffic uses configure
   assert.equal(effectiveImageConcurrency(5, false), 2);
   assert.equal(effectiveImageConcurrency(3, true), 3);
   assert.equal(effectiveImageConcurrency(0, false), 2);
+});
+
+test("public image generation restores the patient attempt budget used by long successful runs", () => {
+  assert.equal(imageAttemptBudget(false, "initial"), 6);
+  assert.equal(imageAttemptBudget(false, "repair"), 4);
+  assert.equal(imageAttemptBudget(true, "initial"), 3);
+  assert.equal(imageAttemptBudget(true, "repair"), 2);
+});
+
+test("all temporary image-provider and Cloudflare server errors are retryable", () => {
+  for (const status of [408, 425, 429, 500, 502, 503, 504, 520, 522, 524, 530]) {
+    assert.equal(isRetryableImageStatus(status), true, String(status));
+  }
+  for (const status of [400, 401, 402, 403, 404, 422]) {
+    assert.equal(isRetryableImageStatus(status), false, String(status));
+  }
 });
 
 test("repair images use progressively smaller 16:9 source sizes", () => {
@@ -109,6 +127,37 @@ test("non-retryable authentication failures stop immediately", async () => {
     }, { attempts: 5 });
     assert.equal(ok, false);
     assert.equal(calls, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalInterval === undefined) delete process.env.CF_IMAGE_MIN_INTERVAL_MS;
+    else process.env.CF_IMAGE_MIN_INTERVAL_MS = originalInterval;
+    await fs.rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("Cloudflare 520-class failures use the full retry budget", async () => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "bay-image-test-"));
+  const outPath = path.join(tempDir, "scene.jpg");
+  const originalFetch = globalThis.fetch;
+  const originalInterval = process.env.CF_IMAGE_MIN_INTERVAL_MS;
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls++;
+    return {
+      ok: false,
+      status: 530,
+      headers: { get: () => "0.001" }
+    };
+  };
+  process.env.CF_IMAGE_MIN_INTERVAL_MS = "0";
+
+  try {
+    const ok = await fetchImage("a vineyard", 42, outPath, {
+      imageBase: "https://image.pollinations.ai/prompt",
+      imageModel: "flux"
+    }, { attempts: 3 });
+    assert.equal(ok, false);
+    assert.equal(calls, 3);
   } finally {
     globalThis.fetch = originalFetch;
     if (originalInterval === undefined) delete process.env.CF_IMAGE_MIN_INTERVAL_MS;

@@ -29,12 +29,12 @@ jobs:
       CF_HD_MAX_MINUTES: "35"
       CF_SHORT_SCENE_SECONDS: "5.5"
       CF_IMG_CONCURRENCY: "3"
-      # Bound each image request and repair missing scenes in paced parallel batches.
-      # With no API key the worker automatically reduces request concurrency.
-      CF_IMAGE_REQUEST_TIMEOUT_MS: "45000"
-      CF_IMAGE_MIN_INTERVAL_MS: "750"
-      CF_IMG_REPAIR_CONCURRENCY: "2"
-      CF_IMG_REPAIR_ROUNDS: "4"
+      # The public image endpoint can be slow or temporarily overloaded. Give each
+      # request time to finish, pace starts, and repair stragglers sequentially.
+      CF_IMAGE_REQUEST_TIMEOUT_MS: "90000"
+      CF_IMAGE_MIN_INTERVAL_MS: "1500"
+      CF_IMG_REPAIR_CONCURRENCY: "1"
+      CF_IMG_REPAIR_ROUNDS: "6"
       CF_IMAGE_ENHANCE: "0"
       CF_WIDTH: "1920"
       CF_HEIGHT: "1080"

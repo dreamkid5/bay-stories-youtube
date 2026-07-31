@@ -88,6 +88,10 @@ In a CSV, the `voice` column overrides the default per row. For Google use a voi
 | `CF_SCENE_SECONDS` | `5.5` | Target seconds per narrated scene |
 | `CF_IMAGE_BASE` | Pollinations prompt endpoint | Image model base URL |
 | `CF_IMAGE_MODEL` | `flux` | Image model name |
+| `CF_IMAGE_REQUEST_TIMEOUT_MS` | `90000` public / `45000` keyed | Maximum wait for one image response |
+| `CF_IMAGE_MIN_INTERVAL_MS` | `750` | Minimum gap between image request starts |
+| `CF_IMG_REPAIR_CONCURRENCY` | `2` | Parallel missing-image repairs; production uses `1` for the public endpoint |
+| `CF_IMG_REPAIR_ROUNDS` | `4` | Bounded missing-image repair rounds; production uses `6` |
 | `CF_MUSIC` | empty | Path to a shared music file for rows without their own |
 | `TTS_API_KEY` | empty | Turns narration on |
 | `CF_TTS_URL` | OpenAI speech | Text to speech endpoint |

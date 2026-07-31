@@ -71,6 +71,18 @@ export function effectiveImageConcurrency(requested, hasToken) {
   return hasToken ? configured : Math.min(2, configured);
 }
 
+export function imageAttemptBudget(hasToken, phase = "initial") {
+  if (hasToken) return phase === "repair" ? 2 : 3;
+  // The public endpoint is bursty. The older production path that completed
+  // long videos allowed six tries initially and four on a fresh repair seed.
+  return phase === "repair" ? 4 : 6;
+}
+
+export function isRetryableImageStatus(status) {
+  return status === 408 || status === 425 || status === 429 ||
+    (status >= 500 && status <= 599);
+}
+
 export function repairImageSize(round, cfg = {}) {
   const width = Number(cfg.width) || 1920;
   const height = Number(cfg.height) || 1080;
@@ -97,7 +109,19 @@ function retryAfterMs(response, attempt) {
   const raw = response.headers.get("retry-after") || "";
   const seconds = Number(raw);
   if (Number.isFinite(seconds) && seconds > 0) return Math.min(60000, seconds * 1000);
-  return Math.min(30000, 3000 * (2 ** attempt));
+  return Math.min(45000, 6000 * (attempt + 1));
+}
+
+function noteImageFailure(diagnostics, reason) {
+  if (!diagnostics) return;
+  diagnostics[reason] = (diagnostics[reason] || 0) + 1;
+}
+
+function describeImageFailures(diagnostics) {
+  return Object.entries(diagnostics)
+    .sort((a, b) => b[1] - a[1])
+    .map(([reason, count]) => reason + "=" + count)
+    .join(", ");
 }
 
 export async function fetchImage(prompt, seed, outPath, cfg, opts = {}) {
@@ -107,11 +131,15 @@ export async function fetchImage(prompt, seed, outPath, cfg, opts = {}) {
   const unified = /(^|\/\/)gen\.pollinations\.ai(?:\/|$)/i.test(base);
   const w = Number(opts.width) || Number(cfg.width) || 1920;
   const h = Number(opts.height) || Number(cfg.height) || 1080;
-  const attempts = Math.max(1, Number(opts.attempts) || 3);
-  const configuredTimeoutMs = Number(process.env.CF_IMAGE_REQUEST_TIMEOUT_MS || 45000);
+  const attempts = Math.max(
+    1,
+    Number(opts.attempts) || imageAttemptBudget(!!cfg.imageToken, opts.phase)
+  );
+  const defaultTimeoutMs = cfg.imageToken ? 45000 : 90000;
+  const configuredTimeoutMs = Number(process.env.CF_IMAGE_REQUEST_TIMEOUT_MS || defaultTimeoutMs);
   const requestTimeoutMs = Number.isFinite(configuredTimeoutMs)
     ? Math.max(10000, configuredTimeoutMs)
-    : 45000;
+    : defaultTimeoutMs;
   // Prompt enhancement improves the first try but adds a step that can fail. So we use
   // it only on the FIRST attempt (best quality) and drop it on retries (more reliable),
   // which lifts the success rate without losing quality when things go smoothly.
@@ -145,7 +173,10 @@ export async function fetchImage(prompt, seed, outPath, cfg, opts = {}) {
           await fs.writeFile(outPath, buf);
           return true;
         }
-      } else if ([408, 429, 500, 502, 503, 504].includes(r.status)) {
+        noteImageFailure(opts.diagnostics, "invalid-body");
+        imageCooldownUntil = Math.max(imageCooldownUntil, Date.now() + 3000);
+      } else if (isRetryableImageStatus(r.status)) {
+        noteImageFailure(opts.diagnostics, "http-" + r.status);
         // Coordinate a shared cooldown so concurrent workers do not stampede a
         // rate-limited or temporarily unavailable image service.
         imageCooldownUntil = Math.max(
@@ -154,14 +185,19 @@ export async function fetchImage(prompt, seed, outPath, cfg, opts = {}) {
         );
         continue;
       } else {
+        noteImageFailure(opts.diagnostics, "http-" + r.status);
         // Authentication, budget, content, and malformed-request errors are not
         // helped by repeating the exact request several more times.
         return false;
       }
     } catch (e) {
+      const reason = e && (e.name === "TimeoutError" || e.name === "AbortError")
+        ? "timeout"
+        : "network";
+      noteImageFailure(opts.diagnostics, reason);
       imageCooldownUntil = Math.max(
         imageCooldownUntil,
-        Date.now() + Math.min(15000, 2000 * (attempt + 1))
+        Date.now() + Math.min(30000, 5000 * (attempt + 1))
       );
     }
   }
@@ -630,7 +666,8 @@ export async function renderJob(job, cfg, workDir, outFile) {
     process.env.CF_IMG_CONCURRENCY || 2,
     !!cfg.imageToken
   );
-  const firstPassAttempts = cfg.imageToken ? 3 : 2;
+  const firstPassAttempts = imageAttemptBudget(!!cfg.imageToken, "initial");
+  const imageDiagnostics = {};
   let next = 0, done = 0;
   async function imgWorker() {
     while (true) {
@@ -638,13 +675,17 @@ export async function renderJob(job, cfg, workDir, outFile) {
       if (i >= scenes.length) return;
       const p = path.join(workDir, "img" + i + ".jpg");
       if (await fetchImage(buildPrompt(prompts[i], style), 3000 + i * 7, p, cfg, {
-        attempts: firstPassAttempts
+        attempts: firstPassAttempts,
+        diagnostics: imageDiagnostics
       })) results[i] = p;
       done++;
       if (done % 20 === 0 || done === scenes.length) cfg.log("  images " + done + "/" + scenes.length);
     }
   }
   await Promise.all(Array.from({ length: Math.min(CONC, scenes.length) }, imgWorker));
+  if (Object.keys(imageDiagnostics).length) {
+    cfg.log("  image provider retry reasons: " + describeImageFailures(imageDiagnostics));
+  }
 
   // Regeneration pass: retry only missing scenes with fresh seeds, bounded attempts,
   // paced parallel workers, and progressively smaller source images. The final video
@@ -675,7 +716,9 @@ export async function renderJob(job, cfg, workDir, outFile) {
         const seed = 500000 + i * 131 + round * 91193;
         if (await fetchImage(buildPrompt(prompts[i], style), seed, p, cfg, {
           ...repairSize,
-          attempts: cfg.imageToken ? 2 : 1,
+          attempts: imageAttemptBudget(!!cfg.imageToken, "repair"),
+          phase: "repair",
+          diagnostics: imageDiagnostics,
           enhance: false
         })) {
           results[i] = p;
@@ -694,6 +737,9 @@ export async function renderJob(job, cfg, workDir, outFile) {
     const remaining = results.filter((result) => !result).length;
     cfg.log("  repair round " + round + " complete: " + repaired +
       " recovered, " + remaining + " remaining");
+  }
+  if (Object.keys(imageDiagnostics).length) {
+    cfg.log("  final image provider retry reasons: " + describeImageFailures(imageDiagnostics));
   }
   const imgs = results.filter(Boolean);
   if (!imgs.length) throw new Error("no images were generated");
