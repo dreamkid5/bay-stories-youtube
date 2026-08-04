@@ -7,6 +7,7 @@ import test from "node:test";
 import {
   newFemalePresenterIdentity,
   newMalePresenterIdentity,
+  presenterAgeProfile,
   presenterAssessmentApproved,
   validateFemalePresenterImage,
   LOCKED_PRESENTER_GENDER
@@ -38,6 +39,73 @@ test("the approved male presenter prompt excludes women", () => {
   assert.match(profile.prompt, /adult white European man presenter/i);
   assert.match(profile.prompt, /white male presenter only/i);
   assert.match(profile.prompt, /no woman, no female person/i);
+});
+
+test("male presenter age matches the narrator's explicit numeric age", () => {
+  const job = {
+    title: "A family betrayal",
+    script: "My sister is 24 years old. I am 52 years old, and I never expected this from her."
+  };
+  const age = presenterAgeProfile(job);
+  const profile = newMalePresenterIdentity(job);
+  assert.equal(age.years, 52);
+  assert.equal(age.matched, true);
+  assert.match(profile.prompt, /exactly 52 years old/i);
+  assert.doesNotMatch(profile.prompt, /24 years old/i);
+});
+
+test("male presenter age understands written ages and ignores past narrator ages", () => {
+  const age = presenterAgeProfile({
+    script: "When I was nineteen, I left home. I am now forty-seven years old and finally ready to tell the truth."
+  });
+  assert.equal(age.years, 47);
+  assert.equal(age.matched, true);
+});
+
+test("male presenter age understands first-person name introductions", () => {
+  const age = presenterAgeProfile({
+    script: "I'm Daniel, sixty-three years old, and this is the story of the house I inherited."
+  });
+  assert.equal(age.years, 63);
+  assert.equal(age.matched, true);
+});
+
+test("male presenter age understands narrator decade descriptions", () => {
+  const age = presenterAgeProfile({ script: "I'm in my late sixties, and this happened to me last winter." });
+  const profile = newMalePresenterIdentity({ script: "I'm in my late sixties, and this happened to me last winter." });
+  assert.equal(age.min, 67);
+  assert.equal(age.max, 69);
+  assert.match(profile.prompt, /in his late sixties/i);
+});
+
+test("unstated narrator ages use an explicit adult fallback", () => {
+  const age = presenterAgeProfile({ script: "My sister betrayed me at dinner." });
+  assert.equal(age.matched, false);
+  assert.match(age.label, /default/i);
+});
+
+test("an underage narrator fails closed instead of receiving the wrong adult image", () => {
+  assert.throws(
+    () => newMalePresenterIdentity({ script: "I am seventeen years old, and this is my story." }),
+    /conflicts with the channel's verified adult male presenter requirement/i
+  );
+});
+
+test("visual validation rejects a presenter outside the script age", () => {
+  const age = presenterAgeProfile({ script: "I am 61 years old and recently retired." });
+  const base = {
+    person_count: 1,
+    adult_man: true,
+    white_presenting: true,
+    woman_present: false,
+    photorealistic: true,
+    face_visible: true,
+    presenter_framing: true,
+    age_match: true
+  };
+  assert.equal(presenterAssessmentApproved({ ...base, estimated_age: 62 }, "male", age), true);
+  assert.equal(presenterAssessmentApproved({ ...base, estimated_age: 32 }, "male", age), false);
+  assert.equal(presenterAssessmentApproved({ ...base, estimated_age: 62, age_match: false }, "male", age), false);
 });
 
 test("every narration request resolves to the locked Brian male voice", () => {

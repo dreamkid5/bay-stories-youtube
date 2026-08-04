@@ -8,6 +8,123 @@ const VALIDATION_PASSES = 2;
 const MAX_CANDIDATES = 12;
 export const LOCKED_PRESENTER_GENDER = "male";
 
+const NUMBER_WORDS = new Map([
+  ["ten", 10], ["eleven", 11], ["twelve", 12], ["thirteen", 13],
+  ["fourteen", 14], ["fifteen", 15], ["sixteen", 16], ["seventeen", 17],
+  ["eighteen", 18], ["nineteen", 19], ["twenty", 20], ["thirty", 30],
+  ["forty", 40], ["fifty", 50], ["sixty", 60], ["seventy", 70],
+  ["eighty", 80], ["ninety", 90], ["one hundred", 100]
+]);
+const ONES = new Map([
+  ["one", 1], ["two", 2], ["three", 3], ["four", 4], ["five", 5],
+  ["six", 6], ["seven", 7], ["eight", 8], ["nine", 9]
+]);
+const AGE_NUMBER = "(?:100|[1-9]\\d?|one hundred|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|(?:twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)(?:[- ](?:one|two|three|four|five|six|seven|eight|nine))?)";
+const DECADES = new Map([
+  ["twenties", 20], ["thirties", 30], ["forties", 40], ["fifties", 50],
+  ["sixties", 60], ["seventies", 70], ["eighties", 80], ["nineties", 90]
+]);
+
+function parseAgeNumber(value) {
+  const normalized = String(value || "").toLowerCase().replace(/-/g, " ").replace(/\s+/g, " ").trim();
+  if (/^\d+$/.test(normalized)) return Number(normalized);
+  if (NUMBER_WORDS.has(normalized)) return NUMBER_WORDS.get(normalized);
+  const parts = normalized.split(" ");
+  if (parts.length === 2 && NUMBER_WORDS.has(parts[0]) && ONES.has(parts[1])) {
+    return NUMBER_WORDS.get(parts[0]) + ONES.get(parts[1]);
+  }
+  return null;
+}
+
+function exactAgeProfile(value, source) {
+  const years = parseAgeNumber(value);
+  if (!Number.isInteger(years) || years > 100) return null;
+  if (years < 18) {
+    return {
+      matched: true,
+      invalid: true,
+      years,
+      label: years + " years old",
+      source
+    };
+  }
+  const tolerance = years < 30 ? 4 : years < 50 ? 5 : 7;
+  return {
+    matched: true,
+    years,
+    min: years,
+    max: years,
+    validationMin: Math.max(18, years - tolerance),
+    validationMax: Math.min(100, years + tolerance),
+    label: years + " years old",
+    prompt: "who is exactly " + years + " years old, with clearly age-appropriate facial features",
+    source
+  };
+}
+
+function decadeAgeProfile(qualifier, decade, source) {
+  const start = DECADES.get(String(decade || "").toLowerCase());
+  if (!start) return null;
+  const q = String(qualifier || "").toLowerCase();
+  const offsets = q === "early" ? [0, 3] : q === "mid" ? [4, 6] : q === "late" ? [7, 9] : [0, 9];
+  const min = start + offsets[0];
+  const max = start + offsets[1];
+  const label = (q ? q + " " : "") + String(decade).toLowerCase();
+  return {
+    matched: true,
+    years: null,
+    min,
+    max,
+    validationMin: Math.max(18, min - 2),
+    validationMax: Math.min(100, max + 2),
+    label,
+    prompt: "who is in his " + label + ", with clearly age-appropriate facial features",
+    source
+  };
+}
+
+// Extract only the narrator's current age. Ages belonging to relatives and past-tense
+// phrases such as "when I was 19" must never determine the presenter.
+export function presenterAgeProfile(job = {}) {
+  const script = String(job.script || "").replace(/[’‘]/g, "'");
+  const exactPatterns = [
+    new RegExp("^\\s*(?:narrator|presenter)\\s*age\\s*[:=-]\\s*(" + AGE_NUMBER + ")\\b", "im"),
+    new RegExp("\\bI(?:\\s+am|'m)\\s+(?:currently\\s+|now\\s+)?(?:a\\s+)?(" + AGE_NUMBER + ")(?:\\s*[- ]\\s*years?\\s*[- ]\\s*old|\\s+years?\\s+old)?\\b", "i"),
+    new RegExp("\\bI(?:\\s+am|'m)\\s+[A-Z][A-Za-z'-]+\\s*[,;]\\s*(" + AGE_NUMBER + ")(?:\\s*[- ]\\s*years?\\s*[- ]\\s*old|\\s+years?\\s+old)?\\b", "i"),
+    new RegExp("\\bI\\s*,\\s*[A-Z][A-Za-z'-]+(?:\\s+[A-Z][A-Za-z'-]+)?\\s*,\\s*(?:am|'m)\\s+(" + AGE_NUMBER + ")(?:\\s+years?\\s+old)?\\b", "i"),
+    new RegExp("\\bAs\\s+(?:a|an)\\s+(" + AGE_NUMBER + ")\\s*[- ]\\s*year\\s*[- ]\\s*old\\b", "i"),
+    new RegExp("\\bNow\\s+(" + AGE_NUMBER + ")(?:\\s+years?\\s+old)?\\s*[,;]\\s*I\\b", "i"),
+    new RegExp("\\b(?:Now|Today)\\s*[,]?\\s*(?:at\\s+)?(" + AGE_NUMBER + ")(?:\\s+years?\\s+old)?\\s*[,;]\\s*I\\b", "i"),
+    new RegExp("\\bAt\\s+(" + AGE_NUMBER + ")\\s+years?\\s+old\\s*[,;]\\s*I(?:\\s+am|'m|\\s+have|\\s+live|\\s+work)\\b", "i"),
+    new RegExp("\\bI\\s+(?:have\\s+)?just\\s+turned\\s+(" + AGE_NUMBER + ")\\b", "i"),
+    new RegExp("\\bI\\s+turned\\s+(" + AGE_NUMBER + ")\\s+(?:this|last)\\s+(?:week|month|year|birthday)\\b", "i")
+  ];
+  for (const pattern of exactPatterns) {
+    const match = script.match(pattern);
+    if (match) {
+      const profile = exactAgeProfile(match[1], "current narrator age stated in script");
+      if (profile) return profile;
+    }
+  }
+
+  const qualifiedDecade = script.match(/\bI(?:\s+am|'m)\s+(?:currently\s+|now\s+)?(?:in\s+)?my\s+(early|mid|late)[ -](twenties|thirties|forties|fifties|sixties|seventies|eighties|nineties)\b/i);
+  if (qualifiedDecade) return decadeAgeProfile(qualifiedDecade[1], qualifiedDecade[2], "current narrator age range stated in script");
+  const decade = script.match(/\bI(?:\s+am|'m)\s+(?:currently\s+|now\s+)?(?:in\s+)?my\s+(twenties|thirties|forties|fifties|sixties|seventies|eighties|nineties)\b/i);
+  if (decade) return decadeAgeProfile("", decade[1], "current narrator age range stated in script");
+
+  return {
+    matched: false,
+    years: null,
+    min: 30,
+    max: 39,
+    validationMin: 28,
+    validationMax: 41,
+    label: "mid thirties (default; narrator age not stated)",
+    prompt: "who is in his mid thirties",
+    source: "no current narrator age stated"
+  };
+}
+
 const HAIR = [
   "a short blonde bob",
   "shoulder-length brunette waves",
@@ -67,6 +184,13 @@ function pick(items, byte) {
 
 function newPresenterIdentity(job = {}, gender = LOCKED_PRESENTER_GENDER) {
   const isMale = gender === "male";
+  const ageProfile = presenterAgeProfile(job);
+  if (ageProfile.invalid) {
+    throw new Error(
+      "the script states that the narrator is " + ageProfile.label +
+      ", which conflicts with the channel's verified adult male presenter requirement"
+    );
+  }
   const storyFingerprint = createHash("sha256")
     .update(gender + "\n" + String(job.title || "") + "\n" + String(job.script || ""))
     .digest("hex");
@@ -79,7 +203,7 @@ function newPresenterIdentity(job = {}, gender = LOCKED_PRESENTER_GENDER) {
   const identity = digest.toString("hex").slice(0, 16);
   const who = isMale
     ? [
-        "one friendly relatable adult white European man presenter in his early thirties",
+        "one friendly relatable adult white European man presenter " + ageProfile.prompt,
         "with " + pick(FEATURES, digest[4]),
         "and " + pick(MALE_HAIR, digest[5]),
         "wearing " + pick(MALE_CLOTHING, digest[6])
@@ -101,7 +225,7 @@ function newPresenterIdentity(job = {}, gender = LOCKED_PRESENTER_GENDER) {
       : "one white woman only, white female presenter only, light skin, no man, no male person",
     "not an illustration"
   ].join(", ");
-  return { identity, seed, prompt };
+  return { identity, seed, prompt, ageProfile };
 }
 
 export function newFemalePresenterIdentity(job = {}) {
@@ -126,19 +250,26 @@ function imageMediaType(bytes) {
   return "image/jpeg";
 }
 
-export function presenterAssessmentApproved(data, gender = LOCKED_PRESENTER_GENDER) {
+export function presenterAssessmentApproved(data, gender = LOCKED_PRESENTER_GENDER, ageProfile = null) {
   if (!data || Number(data.person_count) !== 1) return false;
   const correctGender = gender === "male"
     ? data.adult_man === true && data.woman_present === false
     : data.adult_woman === true && data.man_present === false;
-  return correctGender &&
+  const estimatedAge = Number(data.estimated_age);
+  const correctAge = !ageProfile || !ageProfile.matched || (
+    data.age_match === true &&
+    Number.isFinite(estimatedAge) &&
+    estimatedAge >= ageProfile.validationMin &&
+    estimatedAge <= ageProfile.validationMax
+  );
+  return correctGender && correctAge &&
     data.white_presenting === true &&
     data.photorealistic === true &&
     data.face_visible === true &&
     data.presenter_framing === true;
 }
 
-async function assessPresenterImage(bytes, cfg, pass, gender = LOCKED_PRESENTER_GENDER) {
+async function assessPresenterImage(bytes, cfg, pass, gender = LOCKED_PRESENTER_GENDER, ageProfile = null) {
   const configuredTimeoutMs = Number(process.env.CF_PRESENTER_VERIFY_TIMEOUT_MS || 60000);
   const requestTimeoutMs = Number.isFinite(configuredTimeoutMs)
     ? Math.max(10000, configuredTimeoutMs)
@@ -154,12 +285,15 @@ async function assessPresenterImage(bytes, cfg, pass, gender = LOCKED_PRESENTER_
     isMale
       ? "with light skin, no woman or female-presenting person anywhere, a clearly visible face,"
       : "with light skin, no man or male-presenting person anywhere, a clearly visible face,",
+    ageProfile && ageProfile.matched
+      ? "The script's current narrator age is " + ageProfile.label + ". Approve the age only if the person visibly appears between " + ageProfile.validationMin + " and " + ageProfile.validationMax + " years old."
+      : "Estimate the person's visible age, but no explicit narrator age was stated in the script.",
     "and a front-facing upper-body presenter composition suitable for a storytime video.",
     "If any attribute is uncertain or ambiguous, set it to false.",
     "Return ONLY JSON with this exact shape:",
     isMale
-      ? '{"person_count":0,"adult_man":false,"white_presenting":false,"woman_present":false,"photorealistic":false,"face_visible":false,"presenter_framing":false,"reason":"short explanation"}'
-      : '{"person_count":0,"adult_woman":false,"white_presenting":false,"man_present":false,"photorealistic":false,"face_visible":false,"presenter_framing":false,"reason":"short explanation"}',
+      ? '{"person_count":0,"adult_man":false,"white_presenting":false,"woman_present":false,"photorealistic":false,"face_visible":false,"presenter_framing":false,"estimated_age":0,"age_match":false,"reason":"short explanation"}'
+      : '{"person_count":0,"adult_woman":false,"white_presenting":false,"man_present":false,"photorealistic":false,"face_visible":false,"presenter_framing":false,"estimated_age":0,"age_match":false,"reason":"short explanation"}',
     "Independent inspection pass: " + pass
   ].join(" ");
 
@@ -210,7 +344,7 @@ async function assessPresenterImage(bytes, cfg, pass, gender = LOCKED_PRESENTER_
         : "";
       const assessment = extractJSON(text);
       return {
-        approved: presenterAssessmentApproved(assessment, gender),
+        approved: presenterAssessmentApproved(assessment, gender, ageProfile),
         reason: assessment && assessment.reason ? String(assessment.reason) : "invalid validator response",
         assessment
       };
@@ -232,13 +366,13 @@ async function assessPresenterImage(bytes, cfg, pass, gender = LOCKED_PRESENTER_
   };
 }
 
-export async function validatePresenterImage(imagePath, cfg, gender = LOCKED_PRESENTER_GENDER) {
+export async function validatePresenterImage(imagePath, cfg, gender = LOCKED_PRESENTER_GENDER, ageProfile = null) {
   if (!cfg.anthropicKey) {
     return { approved: false, reason: "ANTHROPIC_API_KEY is required for presenter verification" };
   }
   const bytes = await fs.readFile(imagePath);
   for (let pass = 1; pass <= VALIDATION_PASSES; pass++) {
-    const result = await assessPresenterImage(bytes, cfg, pass, gender);
+    const result = await assessPresenterImage(bytes, cfg, pass, gender, ageProfile);
     if (!result.approved) return result;
   }
   return { approved: true, reason: "approved by two independent visual checks" };
@@ -315,7 +449,7 @@ export async function generateUniquePresenter({ job, cfg, workDir, fetchImage })
       continue;
     }
 
-    const validation = await validatePresenterImage(presenterPath, cfg, presenterGender);
+    const validation = await validatePresenterImage(presenterPath, cfg, presenterGender, profile.ageProfile);
     if (!validation.approved) {
       if (validation.infrastructureFailure) {
         throw new Error(
@@ -341,6 +475,7 @@ export async function generateUniquePresenter({ job, cfg, workDir, fetchImage })
       seed: profile.seed,
       identity: profile.identity,
       gender: presenterGender,
+      age: profile.ageProfile,
       validation: validation.reason,
       createdAt: new Date().toISOString()
     });

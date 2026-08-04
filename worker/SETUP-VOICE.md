@@ -2,6 +2,9 @@
 
 Griot Studio narrates every story with **`en-US-BrianNeural`**, the channel's male
 Storytime voice. Every video also generates a different male presenter portrait.
+When the script states the current first-person narrator's age, that age is added to
+the portrait prompt and must pass the same two visual checks as the presenter gender.
+The approved age-matched portrait is reused in the video's thumbnail.
 
 ## It is free. No AI-generator bill.
 

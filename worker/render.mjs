@@ -638,7 +638,9 @@ export async function renderJob(job, cfg, workDir, outFile) {
     presenter = generatedPresenter.file;
     job.presenterFile = presenter;
     job.gender = presenterGender;
-    cfg.log("  presenter: new " + presenterGender + " identity " + generatedPresenter.identity + " (left)");
+    job.presenterAge = generatedPresenter.ageProfile;
+    cfg.log("  presenter: new " + presenterGender + " identity " + generatedPresenter.identity +
+      ", age " + generatedPresenter.ageProfile.label + " (left)");
   }
 
   // Character bible: keep the main characters looking the same across scenes.
