@@ -5,6 +5,7 @@ import path from "node:path";
 import test from "node:test";
 
 import {
+  generateUniquePresenter,
   newFemalePresenterIdentity,
   newMalePresenterIdentity,
   presenterAgeProfile,
@@ -269,6 +270,76 @@ test("presenter generation requires two visual checks and remembers rejected ima
   assert.match(presenterSource, /presenter verification could not run/);
   assert.match(presenterSource, /rejectedHashes/);
   assert.match(presenterSource, /validatePresenterImage/);
+});
+
+test("an age-only mismatch falls back to the closest verified man instead of aborting the video", async () => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "griot-presenter-fallback-"));
+  const workDir = path.join(tempDir, "work");
+  await fs.mkdir(workDir, { recursive: true });
+  const originalFetch = globalThis.fetch;
+  // Every candidate is a flawless white adult man, but the visual check keeps
+  // reporting an apparent age that misses the 61-year narrator.
+  globalThis.fetch = async () => ({
+    status: 200,
+    ok: true,
+    async json() {
+      return {
+        content: [{
+          type: "text",
+          text: JSON.stringify({
+            person_count: 1,
+            adult_man: true,
+            white_presenting: true,
+            woman_present: false,
+            photorealistic: true,
+            face_visible: true,
+            presenter_framing: true,
+            estimated_age: 34,
+            age_match: false,
+            reason: "clearly a man in his mid-thirties, not 61"
+          })
+        }]
+      };
+    }
+  });
+  const fetchImage = async (prompt, seed, outPath) => {
+    await fs.writeFile(outPath, Buffer.from([0xff, 0xd8, 0xff, 0xd9]));
+    return true;
+  };
+  try {
+    const result = await generateUniquePresenter({
+      job: { title: "A family betrayal", script: "I am 61 years old and recently retired." },
+      cfg: { anthropicKey: "test-key", seoModel: "test-model", output: tempDir, log: () => {} },
+      workDir,
+      fetchImage
+    });
+    assert.ok(result && result.file, "should return a fallback presenter rather than null");
+  } finally {
+    globalThis.fetch = originalFetch;
+    await fs.rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("a silent image service surfaces a clear, retryable error instead of a blank failure", async () => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "griot-presenter-empty-"));
+  const workDir = path.join(tempDir, "work");
+  await fs.mkdir(workDir, { recursive: true });
+  process.env.CF_PRESENTER_EMPTY_BACKOFF_MS = "0"; // no waiting between empty attempts in tests
+  const fetchImage = async () => null; // the image service returns nothing every time
+  try {
+    await assert.rejects(
+      generateUniquePresenter({
+        job: { title: "A quiet service", script: "My sister betrayed me at dinner." },
+        cfg: { anthropicKey: "test-key", seoModel: "test-model", output: tempDir, log: () => {} },
+        workDir,
+        fetchImage
+      }),
+      /image service|can be retried/i
+    );
+  } finally {
+    delete process.env.CF_PRESENTER_EMPTY_BACKOFF_MS;
+    await fs.rm(tempDir, { recursive: true, force: true });
+  }
 });
 
 test("a corrected version bypasses duplicate guards without deleting the existing draft", async () => {
