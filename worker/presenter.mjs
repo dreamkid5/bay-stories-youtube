@@ -432,6 +432,19 @@ export async function generateUniquePresenter({ job, cfg, workDir, fetchImage })
     throw new Error("ANTHROPIC_API_KEY is required to verify every configured presenter");
   }
 
+  // A run can end without a presenter for two very different reasons: the image
+  // service goes quiet and returns nothing, or the visual check keeps rejecting
+  // otherwise-good faces only because their apparent age is off. Both used to end
+  // in the same silent `return null`, so the render aborted with no clue which one
+  // happened. Count each outcome, and keep the first face that cleared every hard
+  // lock and missed on age alone, so an age-only miss never wastes a whole video.
+  const ageStrict = process.env.CF_PRESENTER_AGE_STRICT === "1";
+  const emptyBackoffMs = Number(process.env.CF_PRESENTER_EMPTY_BACKOFF_MS || 2000);
+  const stats = { emptyImage: 0, duplicate: 0, rejected: 0 };
+  const ageFallbackPath = path.join(workDir, "presenter-age-fallback.jpg");
+  let ageFallback = null;
+  let emptyStreak = 0;
+
   for (let attempt = 0; attempt < MAX_CANDIDATES; attempt++) {
     let profile = newPresenterIdentity(job, presenterGender);
     while (store.seeds.has(profile.seed)) profile = newPresenterIdentity(job, presenterGender);
@@ -441,10 +454,22 @@ export async function generateUniquePresenter({ job, cfg, workDir, fetchImage })
       height: 1024,
       attempts: 3
     });
-    if (!generated) continue;
+    if (!generated) {
+      stats.emptyImage++;
+      emptyStreak++;
+      if (cfg.log) cfg.log("  presenter image API returned nothing (attempt " + (attempt + 1) +
+        "/" + MAX_CANDIDATES + "); the image service is likely rate-limited or down");
+      // Ease off so a brief outage or rate-limit can recover within this run,
+      // capped so a genuinely dead service still fails in good time.
+      const wait = Math.min(emptyBackoffMs * emptyStreak, 10000);
+      if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
+      continue;
+    }
+    emptyStreak = 0;
 
     const imageHash = createHash("sha256").update(await fs.readFile(presenterPath)).digest("hex");
     if (store.hashes.has(imageHash) || store.rejectedHashes.has(imageHash)) {
+      stats.duplicate++;
       if (cfg.log) cfg.log("  presenter duplicate rejected; generating a different " + presenterGender);
       continue;
     }
@@ -457,6 +482,15 @@ export async function generateUniquePresenter({ job, cfg, workDir, fetchImage })
           ". The script will remain in content/ and can be retried."
         );
       }
+      // A face that clears every hard lock (one photorealistic white adult man,
+      // no woman, visible face, presenter framing) and misses only on apparent
+      // age is a safe last resort. Remember the first such candidate, preserved
+      // under its own path so later iterations do not overwrite it.
+      if (!ageStrict && !ageFallback && validation.assessment &&
+          presenterAssessmentApproved(validation.assessment, presenterGender, null)) {
+        await fs.copyFile(presenterPath, ageFallbackPath);
+        ageFallback = { file: ageFallbackPath, profile, reason: validation.reason };
+      }
       store.rejections.push({
         hash: imageHash,
         seed: profile.seed,
@@ -466,6 +500,7 @@ export async function generateUniquePresenter({ job, cfg, workDir, fetchImage })
       store.rejectedHashes.add(imageHash);
       store.seeds.add(profile.seed);
       await saveHistory(store);
+      stats.rejected++;
       if (cfg.log) cfg.log("  presenter visual check rejected candidate: " + validation.reason);
       continue;
     }
@@ -485,7 +520,28 @@ export async function generateUniquePresenter({ job, cfg, workDir, fetchImage })
     return { file: presenterPath, ...profile };
   }
 
-  return null;
+  // Nothing cleared every check. Prefer a verified man who only missed on age
+  // over throwing away a finished-length render, unless age is explicitly strict.
+  if (ageFallback) {
+    await fs.copyFile(ageFallback.file, presenterPath);
+    if (cfg.log) cfg.log("  presenter: no exact age match after " + MAX_CANDIDATES +
+      " tries; using the closest verified " + presenterGender +
+      " (" + ageFallback.reason + ") so the video still renders");
+    return { file: presenterPath, ...ageFallback.profile };
+  }
+
+  // Fail with the actual reason instead of a silent null, so the log names the
+  // real cause and the operator knows whether to wait out the image service or
+  // loosen the age match. The script stays in content/ and is retried next run.
+  const summary = stats.emptyImage >= MAX_CANDIDATES
+    ? "the image service returned no portrait on any of " + MAX_CANDIDATES + " attempts (rate-limited or down)"
+    : stats.emptyImage > stats.rejected
+      ? "the image service mostly returned nothing (" + stats.emptyImage + "/" + MAX_CANDIDATES + " empty)"
+      : "every candidate failed the visual check (" + stats.rejected + " rejected, " + stats.emptyImage + " empty)";
+  throw new Error(
+    presenterGender + " presenter generation failed: " + summary +
+    ". The script stays in content/ and can be retried."
+  );
 }
 
 export async function generateUniqueFemalePresenter(args) {
