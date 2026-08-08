@@ -59,12 +59,16 @@ jobs:
       CF_SCENE_SECONDS: "5.5"
       CF_HD_MAX_MINUTES: "35"
       CF_SHORT_SCENE_SECONDS: "5.5"
-      CF_IMG_CONCURRENCY: "3"
-      # The public image endpoint can be slow or temporarily overloaded. Give each
-      # request time to finish, pace starts, and repair stragglers sequentially.
+      CF_IMG_CONCURRENCY: "6"
+      # The public image endpoint can be slow or temporarily overloaded. Keep
+      # several requests in flight and pace starts modestly so a 400+ scene video
+      # finishes generating images well inside the job timeout; stragglers are
+      # repaired a few at a time. A busy endpoint self-throttles via 429 backoff,
+      # so higher concurrency is safe. (A single 451-scene render previously spent
+      # ~5h45m here at concurrency 3 / 1500ms spacing and hit the 350m timeout.)
       CF_IMAGE_REQUEST_TIMEOUT_MS: "90000"
-      CF_IMAGE_MIN_INTERVAL_MS: "1500"
-      CF_IMG_REPAIR_CONCURRENCY: "1"
+      CF_IMAGE_MIN_INTERVAL_MS: "600"
+      CF_IMG_REPAIR_CONCURRENCY: "3"
       CF_IMG_REPAIR_ROUNDS: "6"
       CF_IMAGE_ENHANCE: "0"
       CF_WIDTH: "1920"
