@@ -25,8 +25,11 @@ for (const name of ["publish.yml", "generate.yml"]) {
     assert.equal(quotedNumber(source, "CF_SCENE_SECONDS"), 5.5);
     assert.equal(quotedNumber(source, "CF_MAX_SCENES"), 720);
     assert.equal(quotedNumber(source, "CF_IMAGE_REQUEST_TIMEOUT_MS"), 90000);
-    assert.equal(quotedNumber(source, "CF_IMAGE_MIN_INTERVAL_MS"), 1500);
-    assert.equal(quotedNumber(source, "CF_IMG_REPAIR_CONCURRENCY"), 1);
+    // Long videos (400+ scenes) must finish generating images inside the 350m
+    // job timeout: keep several requests in flight and pace starts modestly.
+    assert.equal(quotedNumber(source, "CF_IMG_CONCURRENCY"), 6);
+    assert.equal(quotedNumber(source, "CF_IMAGE_MIN_INTERVAL_MS"), 600);
+    assert.equal(quotedNumber(source, "CF_IMG_REPAIR_CONCURRENCY"), 3);
     assert.equal(quotedNumber(source, "CF_IMG_REPAIR_ROUNDS"), 6);
     assert.equal(quotedNumber(source, "CF_IMAGE_ENHANCE"), 0);
     assert.match(source, /^\s*timeout-minutes:\s*350\s*$/m);
