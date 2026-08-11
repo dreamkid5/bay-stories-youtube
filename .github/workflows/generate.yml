@@ -55,6 +55,10 @@ jobs:
       # Every video and matching thumbnail use one verified male presenter.
       # The renderer also enforces this value and ignores caller overrides.
       CF_PRESENTER_GENDER: male
+      # Channel host lock: the same consistent white American man in every video.
+      # The renderer reuses this exact portrait instead of generating a new,
+      # unique presenter per video (no age matching, no variety).
+      CF_LOCKED_PRESENTER: ${{ github.workspace }}/worker/assets/presenter/host.jpg
       CF_EDGE_RATE: "-5%"
       CF_EDGE_PITCH: "+0Hz"
       # Generate only: do not upload, do not archive

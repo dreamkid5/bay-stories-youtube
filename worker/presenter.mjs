@@ -203,7 +203,7 @@ function newPresenterIdentity(job = {}, gender = LOCKED_PRESENTER_GENDER) {
   const identity = digest.toString("hex").slice(0, 16);
   const who = isMale
     ? [
-        "one friendly relatable adult white European man presenter " + ageProfile.prompt,
+        "one friendly relatable adult white American man presenter " + ageProfile.prompt,
         "with " + pick(FEATURES, digest[4]),
         "and " + pick(MALE_HAIR, digest[5]),
         "wearing " + pick(MALE_CLOTHING, digest[6])
@@ -425,8 +425,35 @@ export async function generateUniquePresenter({ job, cfg, workDir, fetchImage })
   // Bay Stories is permanently locked to a male presenter. Caller, CSV,
   // environment, title overrides, and thumbnail fallbacks cannot replace him.
   const presenterGender = LOCKED_PRESENTER_GENDER;
-  const store = await getHistoryStore(cfg.output || path.dirname(workDir));
   const presenterPath = path.join(workDir, "presenter.jpg");
+
+  // Channel host lock: one consistent man is the face of the channel, the exact
+  // same portrait in every video. When CF_LOCKED_PRESENTER points at that image,
+  // reuse it verbatim — no per-video generation, visual verification, uniqueness,
+  // or age matching. This is deliberately the opposite of the varied-presenter
+  // path below, and it needs no image API or ANTHROPIC_API_KEY.
+  const lockedHost = process.env.CF_LOCKED_PRESENTER;
+  if (lockedHost) {
+    try {
+      await fs.access(lockedHost);
+      await fs.copyFile(lockedHost, presenterPath);
+      if (cfg.log) cfg.log("  presenter: locked channel host (same man in every video)");
+      return {
+        file: presenterPath,
+        identity: "locked-host",
+        seed: 0,
+        prompt: "locked channel host portrait",
+        ageProfile: presenterAgeProfile({})
+      };
+    } catch (err) {
+      throw new Error(
+        "CF_LOCKED_PRESENTER is set to " + lockedHost + " but that image could not be read: " +
+        err.message + ". Refusing to fall back to a random presenter for a host-locked channel."
+      );
+    }
+  }
+
+  const store = await getHistoryStore(cfg.output || path.dirname(workDir));
 
   if (!cfg.anthropicKey) {
     throw new Error("ANTHROPIC_API_KEY is required to verify every configured presenter");

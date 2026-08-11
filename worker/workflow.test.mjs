@@ -46,7 +46,19 @@ for (const name of ["publish.yml", "generate.yml"]) {
     assert.match(source, /^\s*CF_PRESENTER_GENDER:\s*male\s*$/m);
     assert.doesNotMatch(source, /CF_PRESENTER_GENDER:\s*female/);
   });
+
+  test(`${name} locks the channel host to the committed portrait`, async () => {
+    const source = await workflow(name);
+    assert.match(source, /^\s*CF_LOCKED_PRESENTER:\s*\$\{\{\s*github\.workspace\s*\}\}\/worker\/assets\/presenter\/host\.jpg\s*$/m);
+  });
 }
+
+test("the locked channel host portrait is committed to the repo", async () => {
+  const host = path.join(ROOT, "worker", "assets", "presenter", "host.jpg");
+  const stat = await fs.stat(host);
+  assert.ok(stat.isFile(), "worker/assets/presenter/host.jpg must exist");
+  assert.ok(stat.size > 5000, "the host portrait must be a real image, not a placeholder");
+});
 
 test("publish jobs check out the latest branch tip after waiting in the queue", async () => {
   const source = await workflow("publish.yml");
