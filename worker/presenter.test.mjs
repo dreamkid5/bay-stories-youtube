@@ -37,7 +37,7 @@ test("the approved male presenter prompt excludes women", () => {
     title: "I Raised My Daughter",
     script: "A father tells his own story."
   });
-  assert.match(profile.prompt, /adult white European man presenter/i);
+  assert.match(profile.prompt, /adult white American man presenter/i);
   assert.match(profile.prompt, /white male presenter only/i);
   assert.match(profile.prompt, /no woman, no female person/i);
 });
@@ -270,6 +270,56 @@ test("presenter generation requires two visual checks and remembers rejected ima
   assert.match(presenterSource, /presenter verification could not run/);
   assert.match(presenterSource, /rejectedHashes/);
   assert.match(presenterSource, /validatePresenterImage/);
+});
+
+test("a locked host is reused verbatim, without generating or verifying a presenter", async () => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "griot-locked-host-"));
+  const workDir = path.join(tempDir, "work");
+  await fs.mkdir(workDir, { recursive: true });
+  const hostPath = path.join(tempDir, "host.jpg");
+  const hostBytes = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0xff, 0xd9]);
+  await fs.writeFile(hostPath, hostBytes);
+  const originalLocked = process.env.CF_LOCKED_PRESENTER;
+  process.env.CF_LOCKED_PRESENTER = hostPath;
+  // No anthropicKey and a fetchImage that would throw: the locked path must touch neither.
+  const fetchImage = async () => { throw new Error("image API must not be called for a locked host"); };
+  try {
+    const result = await generateUniquePresenter({
+      job: { title: "Any", script: "Any story." },
+      cfg: { output: tempDir, log: () => {} },
+      workDir,
+      fetchImage
+    });
+    assert.equal(result.identity, "locked-host");
+    assert.deepEqual(await fs.readFile(result.file), hostBytes);
+  } finally {
+    if (originalLocked === undefined) delete process.env.CF_LOCKED_PRESENTER;
+    else process.env.CF_LOCKED_PRESENTER = originalLocked;
+    await fs.rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("a missing locked host fails loudly instead of falling back to a random presenter", async () => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "griot-locked-missing-"));
+  const workDir = path.join(tempDir, "work");
+  await fs.mkdir(workDir, { recursive: true });
+  const originalLocked = process.env.CF_LOCKED_PRESENTER;
+  process.env.CF_LOCKED_PRESENTER = path.join(tempDir, "does-not-exist.jpg");
+  try {
+    await assert.rejects(
+      generateUniquePresenter({
+        job: { title: "Any", script: "Any story." },
+        cfg: { anthropicKey: "k", seoModel: "m", output: tempDir, log: () => {} },
+        workDir,
+        fetchImage: async () => { throw new Error("should not reach generation"); }
+      }),
+      /CF_LOCKED_PRESENTER is set .* could not be read/
+    );
+  } finally {
+    if (originalLocked === undefined) delete process.env.CF_LOCKED_PRESENTER;
+    else process.env.CF_LOCKED_PRESENTER = originalLocked;
+    await fs.rm(tempDir, { recursive: true, force: true });
+  }
 });
 
 test("an age-only mismatch falls back to the closest verified man instead of aborting the video", async () => {
