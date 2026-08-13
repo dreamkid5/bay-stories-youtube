@@ -54,7 +54,12 @@ for (const name of ["publish.yml", "generate.yml"]) {
 
   test(`${name} uses the committed static background instead of generating images`, async () => {
     const source = await workflow(name);
-    assert.match(source, /^\s*CF_BACKGROUND_IMAGE:\s*\$\{\{\s*github\.workspace\s*\}\}\/worker\/assets\/background\/livingroom\.jpg\s*$/m);
+    assert.match(source, /^\s*CF_BACKGROUND_IMAGE:\s*\$\{\{\s*github\.workspace\s*\}\}\/worker\/assets\/background\/coast\.jpg\s*$/m);
+  });
+
+  test(`${name} uses the reference overlay layout`, async () => {
+    const source = await workflow(name);
+    assert.match(source, /^\s*CF_LAYOUT:\s*overlay\s*$/m);
   });
 }
 
@@ -65,10 +70,10 @@ test("the locked channel host portrait is committed to the repo", async () => {
   assert.ok(stat.size > 5000, "the host portrait must be a real image, not a placeholder");
 });
 
-test("the static background is committed to the repo", async () => {
-  const bg = path.join(ROOT, "worker", "assets", "background", "livingroom.jpg");
+test("the coastal background is committed to the repo", async () => {
+  const bg = path.join(ROOT, "worker", "assets", "background", "coast.jpg");
   const stat = await fs.stat(bg);
-  assert.ok(stat.isFile(), "worker/assets/background/livingroom.jpg must exist");
+  assert.ok(stat.isFile(), "worker/assets/background/coast.jpg must exist");
   assert.ok(stat.size > 5000, "the background must be a real image, not a placeholder");
 });
 
@@ -78,6 +83,15 @@ test("the renderer skips image generation when a static background is set", asyn
   assert.match(source, /process\.env\.CF_BACKGROUND_IMAGE/);
   assert.match(source, /for \(let i = 0; i < scenes\.length; i\+\+\) results\[i\] = backgroundImage;/);
   assert.match(source, /if \(results\[i\]\) \{ done\+\+; continue; \}/);
+});
+
+test("the overlay layout composites host, waveform, subscribe badge and captions", async () => {
+  const source = await fs.readFile(new URL("./render.mjs", import.meta.url), "utf8");
+  assert.match(source, /export function sceneClipOverlay\(/);
+  assert.match(source, /process\.env\.CF_LAYOUT === "overlay"/);
+  assert.match(source, /showfreqs=/);       // audio-reactive waveform
+  assert.match(source, /text='SUBSCRIBE'/);  // subscribe badge
+  assert.match(source, /subtitles=/);        // karaoke captions
 });
 
 test("publish jobs check out the latest branch tip after waiting in the queue", async () => {
