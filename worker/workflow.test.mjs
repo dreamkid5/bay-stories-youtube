@@ -89,7 +89,7 @@ test("the overlay layout composites host, waveform, subscribe badge and captions
   const source = await fs.readFile(new URL("./render.mjs", import.meta.url), "utf8");
   assert.match(source, /export function sceneClipOverlay\(/);
   assert.match(source, /process\.env\.CF_LAYOUT === "overlay"/);
-  assert.match(source, /showfreqs=/);       // audio-reactive waveform
+  assert.match(source, /showwaves=/);       // audio-reactive waveform (light, no FFT)
   assert.match(source, /text='SUBSCRIBE'/);  // subscribe badge
   assert.match(source, /subtitles=/);        // karaoke captions
 });
