@@ -406,6 +406,61 @@ function sceneClipComposite(presenter, story, audioPath, assPath, outPath, dur, 
   return run(cfg.ffmpeg, args);
 }
 
+// The reference "overlay" layout: a full-frame background (the committed backdrop)
+// with the host in a framed card on the right, an audio-reactive waveform on the
+// left, a SUBSCRIBE badge top-left, and karaoke captions along the bottom. Every
+// element is driven by THIS scene's own narration, so they can never drift. All
+// positions/sizes are proportional to W/H, so it holds at both 1080p and 720p.
+export function sceneClipOverlay(host, background, audioPath, assPath, outPath, dur, cfg, idx = 0) {
+  const crf = String(Number(cfg.crf) || 20);
+  const W = Number(cfg.width) || 1920, H = Number(cfg.height) || 1080;
+  const D = Math.max(0.1, dur);
+  const zoom = Math.min(0.2, Math.max(0, Number(cfg.bgZoom == null ? 0.04 : cfg.bgZoom)));
+  const hi = (1 + zoom).toFixed(3);
+  const z = (idx % 2 === 0) ? "(1+" + zoom + "*t/" + D + ")" : "(" + hi + "-" + zoom + "*t/" + D + ")";
+  // Host card (framed), bottom-right.
+  const cardW = Math.round(W * 0.3125), cardH = Math.round(H * 0.74);
+  const bd = Math.max(3, Math.round(W * 0.003));
+  const cardWp = cardW + bd * 2, cardHp = cardH + bd * 2;
+  const cardX = W - cardWp - Math.round(W * 0.035);
+  const cardY = H - cardHp;
+  // Waveform, mid-left.
+  const waveW = Math.round(W * 0.23), waveH = Math.round(H * 0.185);
+  const waveX = Math.round(W * 0.047), waveY = Math.round(H * 0.31);
+  // SUBSCRIBE badge, top-left.
+  const bX = Math.round(W * 0.03), bY = Math.round(H * 0.05);
+  const bW = Math.round(W * 0.156), bH = Math.round(H * 0.072);
+  const bFont = Math.round(H * 0.037);
+  const bTextX = bX + Math.round(bW * 0.09);
+  const bTextY = bY + Math.round((bH - bFont) / 2) - Math.round(H * 0.006);
+  const subFont = ffEscapePath(path.join(FONTS_DIR, cfg.capFontFile || "Montserrat-ExtraBold.ttf"));
+
+  const args = ["-y",
+    "-loop", "1", "-t", String(dur), "-i", host,
+    "-loop", "1", "-t", String(dur), "-i", background];
+  if (audioPath) args.push("-i", audioPath);
+  else args.push("-f", "lavfi", "-t", String(dur), "-i", "anullsrc=channel_layout=mono:sample_rate=24000");
+
+  const subs = assPath ? ",subtitles='" + ffEscapePath(assPath) + "':fontsdir='" + ffEscapePath(FONTS_DIR) + "'" : "";
+  const filter =
+    "[0:v]scale=" + cardW + ":" + cardH + ",pad=" + cardWp + ":" + cardHp + ":" + bd + ":" + bd + ":white[host];" +
+    "[1:v]scale=" + W + ":" + H + ":force_original_aspect_ratio=increase,crop=" + W + ":" + H + "," +
+      "scale=w='" + W + "*" + z + "':h='" + H + "*" + z + "':eval=frame,crop=" + W + ":" + H + ",setsar=1[bg];" +
+    "[2:a]asplit=2[aout][awav];" +
+    "[awav]showfreqs=s=" + waveW + "x" + waveH + ":mode=bar:ascale=cbrt:colors=white,colorkey=0x000000:0.12:0.06,format=yuva420p,fps=30[wave];" +
+    "[bg][host]overlay=" + cardX + ":" + cardY + "[o1];" +
+    "[o1][wave]overlay=" + waveX + ":" + waveY + "[o2];" +
+    "[o2]drawbox=x=" + bX + ":y=" + bY + ":w=" + bW + ":h=" + bH + ":color=red@0.95:t=fill," +
+      "drawtext=fontfile='" + subFont + "':text='SUBSCRIBE':fontcolor=white:fontsize=" + bFont + ":x=" + bTextX + ":y=" + bTextY + "[o3];" +
+    "[o3]format=yuv420p" + subs + "[v]";
+  args.push(
+    "-filter_complex", filter, "-map", "[v]", "-map", "[aout]",
+    "-r", "30", "-c:v", "libx264", "-preset", "veryfast", "-crf", crf, "-pix_fmt", "yuv420p",
+    "-c:a", "aac", "-b:a", "160k", "-ar", "24000", "-ac", "1", "-t", String(dur), outPath
+  );
+  return run(cfg.ffmpeg, args);
+}
+
 // Generate the per-scene ASS caption file from that scene's word timings.
 async function buildSceneCaptions(wordsFile, assPath, cfg) {
   const W = Number(cfg.width) || 1920, H = Number(cfg.height) || 1080;
@@ -830,7 +885,12 @@ export async function renderJob(job, cfg, workDir, outFile) {
           ass = path.join(workDir, "cap" + i + ".ass");
           try { await buildSceneCaptions(wf, ass, cfg); } catch (e) { ass = null; cfg.log("  captions skipped scene " + (i + 1) + ": " + String(e.message).slice(0, 80)); }
         }
-        await sceneClipComposite(presenter, img, audios[i], ass, c, durs[i], cfg, i);
+        if (process.env.CF_LAYOUT === "overlay") {
+          // Full-frame background + framed host + waveform + SUBSCRIBE + captions.
+          await sceneClipOverlay(presenter, img, audios[i], ass, c, durs[i], cfg, i);
+        } else {
+          await sceneClipComposite(presenter, img, audios[i], ass, c, durs[i], cfg, i);
+        }
       } else if (haveAudio) {
         await sceneClipWithAudio(img, audios[i], c, durs[i], cfg, i);
       } else {

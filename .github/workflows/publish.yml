@@ -58,11 +58,12 @@ jobs:
       CF_INPUT: ${{ github.workspace }}/content
       CF_OUTPUT: ${{ github.workspace }}/_render
       CF_STYLE: story
-      # Static background: every scene reuses this one committed backdrop instead of
-      # generating a per-scene image. This removes the image-generation phase (its
-      # cost, slowness, and timeouts) so renders finish in minutes. The presenter,
-      # karaoke captions, and narration timing are unchanged.
-      CF_BACKGROUND_IMAGE: ${{ github.workspace }}/worker/assets/background/livingroom.jpg
+      # Reference "overlay" layout: a full-frame scenic background with the host in a
+      # framed card, an audio-reactive waveform, a SUBSCRIBE badge, and karaoke
+      # captions. No per-scene image generation (its cost, slowness, and timeouts are
+      # gone), so renders finish in minutes.
+      CF_LAYOUT: overlay
+      CF_BACKGROUND_IMAGE: ${{ github.workspace }}/worker/assets/background/coast.jpg
       # Every story uses a 5.5-second visual target. Resolution remains 1080p
       # below 35 minutes and 720p from 35 minutes upward.
       # Every narrated word is retained.
