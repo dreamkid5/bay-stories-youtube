@@ -101,10 +101,13 @@ jobs:
       CF_LOCKED_PRESENTER: ${{ github.workspace }}/worker/assets/presenter/host.jpg
       CF_EDGE_RATE: "-5%"
       CF_EDGE_PITCH: "+0Hz"
-      # Claude — restricted to mandatory presenter verification. Disabling the
-      # optional scene/SEO calls keeps API use and API-related failures minimal.
+      # Claude is now optional. The locked channel host no longer needs presenter
+      # verification, and SEO/scene calls are off, so the key's only remaining use
+      # is writing the thumbnail's image idea. Non-blocking (=0) so a missing,
+      # expired, or rate-limited key can never fail a whole video: the render and
+      # upload still succeed and the thumbnail simply falls back to the legacy design.
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-      CF_REQUIRE_ANTHROPIC: "1"
+      CF_REQUIRE_ANTHROPIC: "0"
       CF_SEO: "0"
       CF_CHARACTERS: "0"
       CF_SCENE_VISUALS: "0"

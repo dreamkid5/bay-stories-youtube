@@ -65,8 +65,11 @@ jobs:
       CF_YT_UPLOAD: "0"
       CF_ARCHIVE: "0"
       CF_THUMBNAILS: "1"
+      # Claude is now optional (non-blocking): with the locked host needing no
+      # presenter verification, a missing or failing key never fails a video —
+      # the thumbnail just falls back to the legacy design.
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-      CF_REQUIRE_ANTHROPIC: "1"
+      CF_REQUIRE_ANTHROPIC: "0"
       CF_SEO: "0"
       CF_CHARACTERS: "0"
       CF_SCENE_VISUALS: "0"

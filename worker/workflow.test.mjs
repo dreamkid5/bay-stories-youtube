@@ -51,6 +51,11 @@ for (const name of ["publish.yml", "generate.yml"]) {
     const source = await workflow(name);
     assert.match(source, /^\s*CF_LOCKED_PRESENTER:\s*\$\{\{\s*github\.workspace\s*\}\}\/worker\/assets\/presenter\/host\.jpg\s*$/m);
   });
+
+  test(`${name} treats the Claude key as optional so it can never block a video`, async () => {
+    const source = await workflow(name);
+    assert.equal(quotedNumber(source, "CF_REQUIRE_ANTHROPIC"), 0);
+  });
 }
 
 test("the locked channel host portrait is committed to the repo", async () => {
