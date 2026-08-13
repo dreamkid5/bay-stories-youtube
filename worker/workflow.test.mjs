@@ -68,6 +68,14 @@ test("publish jobs check out the latest branch tip after waiting in the queue", 
   assert.doesNotMatch(source, /\[skip ci\]/);
 });
 
+test("publish runs every six hours so 3+ pending scripts render per day", async () => {
+  const source = await workflow("publish.yml");
+  // One video per run, four runs a day every 6h at 00/06/12/18 EAT (UTC+3),
+  // which is 21/03/09/15 UTC, rendered one at a time.
+  assert.match(source, /^\s*-\s*cron:\s*"\d+\s+3,9,15,21\s+\*\s+\*\s+\*"\s*$/m);
+  assert.equal(quotedNumber(source, "CF_MAX_FILES_PER_RUN"), 1);
+});
+
 test("thumbnail replacement uses the existing YouTube OAuth route without re-uploading video", async () => {
   const source = await workflow("replace-thumbnail.yml");
   assert.match(source, /video_id:/);

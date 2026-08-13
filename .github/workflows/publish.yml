@@ -26,8 +26,13 @@ on:
       - "worker/**"
       - ".github/workflows/publish.yml"
   schedule:
-    # Daily at 06:00 UTC — publishes anything new sitting in content/.
-    - cron: "0 6 * * *"
+    # Every 6 hours at 00:10, 06:10, 12:10, 18:10 East Africa Time (Kenya, UTC+3).
+    # GitHub cron is UTC-only, so EAT-3h = 21:10, 03:10, 09:10, 15:10 UTC.
+    # Each run publishes ONE pending script from content/ (CF_MAX_FILES_PER_RUN=1),
+    # so supplying 3+ scripts yields 3+ videos a day, rendered one after another.
+    # Runs with no pending script are harmless ~10s no-ops. Minute 10 dodges
+    # top-of-hour scheduler congestion; the concurrency lock prevents any overlap.
+    - cron: "10 3,9,15,21 * * *"
   workflow_dispatch: {}
 
 # Allow the job to commit the published/ move + ledger back to the repo.
