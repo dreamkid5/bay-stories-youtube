@@ -447,7 +447,10 @@ export function sceneClipOverlay(host, background, audioPath, assPath, outPath, 
     "[1:v]scale=" + W + ":" + H + ":force_original_aspect_ratio=increase,crop=" + W + ":" + H + "," +
       "scale=w='" + W + "*" + z + "':h='" + H + "*" + z + "':eval=frame,crop=" + W + ":" + H + ",setsar=1[bg];" +
     "[2:a]asplit=2[aout][awav];" +
-    "[awav]showfreqs=s=" + waveW + "x" + waveH + ":mode=bar:ascale=cbrt:colors=white,colorkey=0x000000:0.12:0.06,format=yuva420p,fps=30[wave];" +
+    // Amplitude waveform (showwaves), NOT showfreqs: no FFT, so it stays light and
+    // portable across ffmpeg builds. showfreqs' FFT buffers blew up memory on the
+    // runner's system ffmpeg and killed long renders; showwaves is cheap per frame.
+    "[awav]showwaves=s=" + waveW + "x" + waveH + ":mode=cline:rate=30:colors=white,colorkey=0x000000:0.10:0.06,format=yuva420p[wave];" +
     "[bg][host]overlay=" + cardX + ":" + cardY + "[o1];" +
     "[o1][wave]overlay=" + waveX + ":" + waveY + "[o2];" +
     "[o2]drawbox=x=" + bX + ":y=" + bY + ":w=" + bW + ":h=" + bH + ":color=red@0.95:t=fill," +
