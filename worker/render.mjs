@@ -664,6 +664,30 @@ export async function renderJob(job, cfg, workDir, outFile) {
     (visuals && visuals[i]) ? visuals[i] : (s + sceneCharacterNote(s, bible, charState)));
 
   const results = new Array(scenes.length).fill(null);
+
+  // Static-background mode: when CF_BACKGROUND_IMAGE is set, every scene shares one
+  // committed backdrop instead of a freshly generated per-scene image. This removes
+  // the entire image-generation phase — its API cost, its rate-limit slowness, and
+  // the timeouts that came with 400+ image requests — so long videos render in
+  // minutes. The presenter, karaoke captions, and per-scene narration timing are
+  // unchanged; the alternating Ken Burns keeps the shared backdrop breathing
+  // seamlessly across every hard cut. A set-but-unreadable path fails loudly rather
+  // than silently reverting to slow image generation.
+  const backgroundImage = process.env.CF_BACKGROUND_IMAGE || "";
+  if (backgroundImage) {
+    try {
+      await fs.access(backgroundImage);
+    } catch (err) {
+      throw new Error(
+        "CF_BACKGROUND_IMAGE is set to " + backgroundImage + " but that image could not be read: " +
+        err.message + ". Refusing to fall back to slow per-scene image generation."
+      );
+    }
+    for (let i = 0; i < scenes.length; i++) results[i] = backgroundImage;
+    cfg.log("  background: one committed backdrop for all " + scenes.length +
+      " scene(s); image generation skipped");
+  }
+
   const CONC = effectiveImageConcurrency(
     process.env.CF_IMG_CONCURRENCY || 2,
     !!cfg.imageToken
@@ -675,6 +699,7 @@ export async function renderJob(job, cfg, workDir, outFile) {
     while (true) {
       const i = next++;
       if (i >= scenes.length) return;
+      if (results[i]) { done++; continue; } // already supplied (e.g. static background)
       const p = path.join(workDir, "img" + i + ".jpg");
       if (await fetchImage(buildPrompt(prompts[i], style), 3000 + i * 7, p, cfg, {
         attempts: firstPassAttempts,

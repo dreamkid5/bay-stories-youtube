@@ -51,6 +51,11 @@ for (const name of ["publish.yml", "generate.yml"]) {
     const source = await workflow(name);
     assert.match(source, /^\s*CF_LOCKED_PRESENTER:\s*\$\{\{\s*github\.workspace\s*\}\}\/worker\/assets\/presenter\/host\.jpg\s*$/m);
   });
+
+  test(`${name} uses the committed static background instead of generating images`, async () => {
+    const source = await workflow(name);
+    assert.match(source, /^\s*CF_BACKGROUND_IMAGE:\s*\$\{\{\s*github\.workspace\s*\}\}\/worker\/assets\/background\/livingroom\.jpg\s*$/m);
+  });
 }
 
 test("the locked channel host portrait is committed to the repo", async () => {
@@ -58,6 +63,21 @@ test("the locked channel host portrait is committed to the repo", async () => {
   const stat = await fs.stat(host);
   assert.ok(stat.isFile(), "worker/assets/presenter/host.jpg must exist");
   assert.ok(stat.size > 5000, "the host portrait must be a real image, not a placeholder");
+});
+
+test("the static background is committed to the repo", async () => {
+  const bg = path.join(ROOT, "worker", "assets", "background", "livingroom.jpg");
+  const stat = await fs.stat(bg);
+  assert.ok(stat.isFile(), "worker/assets/background/livingroom.jpg must exist");
+  assert.ok(stat.size > 5000, "the background must be a real image, not a placeholder");
+});
+
+test("the renderer skips image generation when a static background is set", async () => {
+  const source = await fs.readFile(new URL("./render.mjs", import.meta.url), "utf8");
+  // Background scenes are pre-filled and the image worker skips already-filled scenes.
+  assert.match(source, /process\.env\.CF_BACKGROUND_IMAGE/);
+  assert.match(source, /for \(let i = 0; i < scenes\.length; i\+\+\) results\[i\] = backgroundImage;/);
+  assert.match(source, /if \(results\[i\]\) \{ done\+\+; continue; \}/);
 });
 
 test("publish jobs check out the latest branch tip after waiting in the queue", async () => {
