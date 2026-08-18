@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import test from "node:test";
-import { transitionFadeSeconds, dipToBlackVideo, dipToBlackAudio } from "./manual-assemble.mjs";
+import { transitionFadeSeconds, dipToBlackVideo, dipToBlackAudio, reconcileImageTimingToNarration } from "./manual-assemble.mjs";
 
 test("transitionFadeSeconds defaults to 200ms, capped at 15% of a short slot's own duration", () => {
   assert.equal(transitionFadeSeconds(30), 0.2);
@@ -47,4 +47,44 @@ test("buildImageClip, buildFaceOffClip, and video 0 all get their own dip-to-bla
   assert.match(source, /dipToBlackAudio\(durationSec\)/); // video 0's own audio dip
   assert.match(source, /const sourceClip0Duration = await probeDuration\(videoZero\);/);
   assert.match(source, /normalizeVideoClip\(videoZero, clip0, width, height, sourceClip0Duration\)/);
+});
+
+test("reconcileImageTimingToNarration reproduces and fixes the real production failure: a 39-scene, 40-minute video where narration runs 83s short and the LAST scene is only 32s", () => {
+  // Mirrors the actual shot list that failed: scenes 1-38 sum to 2368s, scene 39
+  // runs 2368-2400 (32s). Real narration duration measured: 2316.7s (83.3s short).
+  const images = [
+    { index: 1, start: 0, end: 94 },
+    { index: 38, start: 2312, end: 2368 },
+    { index: 39, start: 2368, end: 2400 }
+  ];
+  const narrationDuration = 2316.7;
+  // The old design (stretch only the last image) would compute a negative duration
+  // here: 2400 + (2316.7 - 2400) = 2316.7 end vs 2368 start = -51.3s. Assert the new
+  // design keeps every scene positive instead.
+  reconcileImageTimingToNarration(images, narrationDuration, () => {});
+  for (const im of images) {
+    assert.ok(im.end > im.start, "image " + im.index + " must have a positive duration, got " +
+      (im.end - im.start).toFixed(1) + "s");
+  }
+  // The whole sequence now ends exactly when the narration does.
+  assert.ok(Math.abs(images[images.length - 1].end - narrationDuration) < 1e-6);
+});
+
+test("reconcileImageTimingToNarration scales every scene by the same factor, preserving relative pacing", () => {
+  const images = [
+    { index: 1, start: 0, end: 10 },
+    { index: 2, start: 10, end: 30 }, // twice as long as scene 1
+    { index: 3, start: 30, end: 40 }
+  ];
+  reconcileImageTimingToNarration(images, 20, () => {}); // half the planned 40s total
+  assert.equal(images[0].end - images[0].start, 5); // 10 * 0.5
+  assert.equal(images[1].end - images[1].start, 10); // 20 * 0.5
+  assert.equal(images[2].end - images[2].start, 5); // 10 * 0.5
+  assert.equal(images[images.length - 1].end, 20);
+});
+
+test("reconcileImageTimingToNarration leaves timing untouched when narration matches within 1s", () => {
+  const images = [{ index: 1, start: 0, end: 10 }, { index: 2, start: 10, end: 20 }];
+  reconcileImageTimingToNarration(images, 20.4, () => {});
+  assert.deepEqual(images, [{ index: 1, start: 0, end: 10 }, { index: 2, start: 10, end: 20 }]);
 });

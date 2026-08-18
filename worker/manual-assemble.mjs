@@ -107,6 +107,35 @@ export function parseTimestampsFile(raw) {
   return entries;
 }
 
+// Your timestamps are authoritative for RELATIVE pacing, but the actual narration
+// almost never lands on exactly the total they add up to (TTS pace never matches a
+// hand-written or AI-estimated shot list exactly). Reconciling that drift by dumping
+// it all onto the last scene is fragile: a short final scene (a quick "call to
+// action," say) can't absorb a large mismatch and goes negative — exactly what a
+// 39-scene, ~40-minute video hit in production when narration ran 83s short and the
+// last scene was only 32s long. Instead, scale EVERY image's start/end by the same
+// factor, so a 3% narration/timestamp mismatch becomes a 3% shift on every scene
+// instead of a fatal one on whichever scene happens to be shortest. Mutates `images`
+// in place and always leaves every duration positive (unless the narration is so
+// short that even a full-timeline scale cannot avoid a degenerate span, which is
+// nearly impossible for a 200ms-fade clip since scale is strictly positive).
+export function reconcileImageTimingToNarration(images, narrationDuration, log) {
+  const totalPlanned = images[images.length - 1].end;
+  const drift = narrationDuration - totalPlanned;
+  if (Math.abs(drift) <= 1 || totalPlanned <= 0) return images;
+  const scale = narrationDuration / totalPlanned;
+  if (log) {
+    log("NOTE: narration is " + Math.abs(drift).toFixed(1) + "s " + (drift > 0 ? "longer" : "shorter") +
+      " than your timestamps cover; scaling every image's timing by " + (scale * 100).toFixed(1) +
+      "% so picture and voice finish together.");
+  }
+  for (const im of images) {
+    im.start *= scale;
+    im.end *= scale;
+  }
+  return images;
+}
+
 async function findByIndex(folder, index, exts) {
   const entries = await fs.readdir(folder);
   const match = entries.find((e) => {
@@ -308,18 +337,9 @@ export async function assembleManualVideo(folder, outFile, opts = {}) {
     const narrationDuration = await probeDuration(narrationMp3);
     log("narration duration: " + narrationDuration.toFixed(1) + "s (" + LOCKED_VOICE + ")");
 
-    // 3) Your timestamps are authoritative, but reconcile any drift against the last
-    //    image so picture and voice both end together instead of one cutting off early.
-    const totalPlanned = images[images.length - 1].end;
-    const drift = narrationDuration - totalPlanned;
-    if (Math.abs(drift) > 1) {
-      log("NOTE: narration is " + Math.abs(drift).toFixed(1) + "s " + (drift > 0 ? "longer" : "shorter") +
-        " than your timestamps cover; stretching the last image to absorb the difference.");
-      images[images.length - 1].end += drift;
-      if (images[images.length - 1].end <= images[images.length - 1].start) {
-        throw new Error("narration is far shorter than your timestamps cover; widen the gap or shorten the script");
-      }
-    }
+    // 3) Your timestamps are authoritative, but reconcile any drift against the whole
+    //    sequence so picture and voice finish together instead of one cutting off early.
+    reconcileImageTimingToNarration(images, narrationDuration, log);
 
     // 4) One silent Ken Burns clip per slot, each exactly its own on-screen duration.
     //    A paired slot (26a + 26b) becomes one combined face-off frame first.
