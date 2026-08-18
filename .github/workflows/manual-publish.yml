@@ -1,0 +1,115 @@
+name: Publish manual videos to YouTube
+
+# How it works:
+#   1. Create a folder under manual/<name>/ with:
+#        0.<ext>            your own intro video clip (keeps its own audio, plays first)
+#        1.<ext>, 2.<ext>...   images, or a "<N>a"/"<N>b" pair for a face-off split-screen
+#        script.txt         the narration text (the channel's locked Brian voice)
+#        timestamps.txt     one line per image: "1: 0:08-0:45" (relative to when
+#                            narration starts, i.e. 0:00 = the instant video 0 ends; a
+#                            trailing note after the time range is ignored)
+#        title.txt          optional; the YouTube title (else derived from the folder name)
+#      See worker/manual-assemble.mjs for the full format.
+#   2. Commit and push manual/<name>/ to main.
+#   3. This workflow assembles the video (no AI image generation involved — it only
+#      narrates your script and applies a slow Ken Burns zoom to your own images) and
+#      uploads it to YouTube as a private draft, same as every other video on this
+#      channel. On success the folder is DELETED from the repo — its record lives on in
+#      manual/.cf-uploaded.json and on YouTube itself — so nothing uploads twice and the
+#      repo never accumulates finished videos or old source footage. A folder that fails
+#      is left in place so the next push or manual run retries it.
+#
+# NOTE: this repository is PUBLIC. Pushing a folder here puts its raw video/images in
+# git history, even after this workflow deletes the folder from the tip afterward.
+#
+# Required repo secrets (Settings -> Secrets and variables -> Actions):
+#   YT_CLIENT_ID, YT_CLIENT_SECRET, YT_REFRESH_TOKEN   YouTube auto-upload
+# Optional repo variable:
+#   CF_YT_PRIVACY   public | unlisted | private   (default: private)
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - "manual/**"
+      - "worker/manual-assemble.mjs"
+      - "worker/manual-publish.mjs"
+      - ".github/workflows/manual-publish.yml"
+  workflow_dispatch: {}
+
+# Allow the job to commit the ledger + folder removal back to the repo.
+permissions:
+  contents: write
+
+# Never run two manual publishers at once (avoids double uploads and push races).
+# A separate group from "publish-youtube" so this can run alongside the AI pipeline.
+concurrency:
+  group: manual-publish-youtube
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      HAS_YT: ${{ secrets.YT_REFRESH_TOKEN != '' }}
+      YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
+      YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
+      YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
+      CF_YT_PRIVACY: ${{ vars.CF_YT_PRIVACY || 'private' }}
+
+    steps:
+      - name: YouTube not connected — skipping
+        if: env.HAS_YT != 'true'
+        run: |
+          echo "::notice::No YT_REFRESH_TOKEN secret set, so no channel is connected yet."
+          echo "This workflow does nothing until you connect a YouTube channel."
+
+      - name: Check out repository
+        if: env.HAS_YT == 'true'
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        if: env.HAS_YT == 'true'
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          package-manager-cache: false
+
+      - name: Install ffmpeg
+        if: env.HAS_YT == 'true'
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+      - name: Install narration + caption deps (edge-tts, pillow)
+        if: env.HAS_YT == 'true'
+        run: python3 -m pip install --upgrade edge-tts pillow
+
+      - name: Assemble and upload manual videos
+        if: env.HAS_YT == 'true'
+        run: node worker/manual-publish.mjs
+
+      - name: Save rendered videos as a downloadable artifact
+        if: env.HAS_YT == 'true' && always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: manual-videos
+          if-no-files-found: ignore
+          retention-days: 14
+          path: manual/**/output.mp4
+
+      - name: Commit ledger and remove uploaded folders
+        if: env.HAS_YT == 'true' && always()
+        run: |
+          git config user.name  "griot-studio-bot"
+          git config user.email "actions@github.com"
+          git add manual/
+          if git diff --cached --quiet; then
+            echo "No manual videos were published."
+          else
+            git commit -m "chore: publish manual video(s)"
+            git pull --rebase --autostash origin ${{ github.ref_name }} || true
+            git push
+          fi

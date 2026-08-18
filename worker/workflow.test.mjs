@@ -118,3 +118,18 @@ test("thumbnail replacement uses the existing YouTube OAuth route without re-upl
   assert.match(source, /node worker\/replace-thumbnail\.mjs/);
   assert.doesNotMatch(source, /watch\.mjs|videos\.insert|Render folktales/);
 });
+
+test("manual publish triggers on manual/ pushes, uploads as a private draft, and never commits the rendered file", async () => {
+  const source = await workflow("manual-publish.yml");
+  assert.match(source, /paths:\s*\n\s*-\s*"manual\/\*\*"/);
+  assert.match(source, /YT_REFRESH_TOKEN:\s*\$\{\{\s*secrets\.YT_REFRESH_TOKEN\s*\}\}/);
+  assert.match(source, /CF_YT_PRIVACY:\s*\$\{\{\s*vars\.CF_YT_PRIVACY\s*\|\|\s*'private'\s*\}\}/);
+  assert.match(source, /node worker\/manual-publish\.mjs/);
+  assert.match(source, /group:\s*manual-publish-youtube/);
+  assert.doesNotMatch(source, /watch\.mjs|CF_LOCKED_PRESENTER|CF_BACKGROUND_IMAGE/);
+});
+
+test("manual/**/output.mp4 is never committed to the repo", async () => {
+  const gitignore = await fs.readFile(path.join(ROOT, ".gitignore"), "utf8");
+  assert.match(gitignore, /manual\/\*\*\/output\.mp4/);
+});

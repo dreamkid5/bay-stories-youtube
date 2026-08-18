@@ -18,6 +18,10 @@ worker/output/
 worker/input/
 input/
 
+# manual-assemble's finished renders are uploaded as a workflow artifact and to
+# YouTube, never committed to the repo — only the source assets + ledger are.
+manual/**/output.mp4
+
 # OS junk
 .DS_Store
 **/.DS_Store
