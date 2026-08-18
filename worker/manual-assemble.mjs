@@ -174,8 +174,37 @@ export function kenBurnsFilter(durationSec, index, width, height, zoomFraction) 
   return fitFrame(width, height) + "," + zoomOnly(durationSec, index, width, height, zoomFraction);
 }
 
+// Dip-to-black transitions: every clip fades in from black at its own start and fades
+// out to black at its own end. Concatenated with the existing fast stream-copy concat
+// (no per-boundary crossfade blending, which would force a slow re-encode at every
+// join), this reads as a dip-to-black transition at every boundary for free. Fade
+// length is capped relative to the clip's own duration so a very short slot never
+// spends most of its on-screen time fading rather than being seen. Mirrors the same
+// helpers in render.mjs; kept local since this script is deliberately standalone.
+// CF_TRANSITION_FADE_MS=0 disables it.
+export function transitionFadeSeconds(durationSec) {
+  const requested = Number(process.env.CF_TRANSITION_FADE_MS != null ? process.env.CF_TRANSITION_FADE_MS : 200) / 1000;
+  if (!(requested > 0)) return 0;
+  return Math.max(0, Math.min(requested, durationSec * 0.15));
+}
+
+export function dipToBlackVideo(durationSec) {
+  const f = transitionFadeSeconds(durationSec);
+  if (f <= 0) return "";
+  const outStart = Math.max(0, durationSec - f);
+  return ",fade=t=in:st=0:d=" + f.toFixed(3) + ":color=black," +
+    "fade=t=out:st=" + outStart.toFixed(3) + ":d=" + f.toFixed(3) + ":color=black";
+}
+
+export function dipToBlackAudio(durationSec) {
+  const f = transitionFadeSeconds(durationSec);
+  if (f <= 0) return "";
+  const outStart = Math.max(0, durationSec - f);
+  return ",afade=t=in:st=0:d=" + f.toFixed(3) + ",afade=t=out:st=" + outStart.toFixed(3) + ":d=" + f.toFixed(3);
+}
+
 async function buildImageClip(imagePath, durationSec, index, outPath, width, height, zoomFraction) {
-  const vf = kenBurnsFilter(durationSec, index, width, height, zoomFraction);
+  const vf = kenBurnsFilter(durationSec, index, width, height, zoomFraction) + dipToBlackVideo(durationSec);
   await run(FFMPEG, [
     "-y", "-loop", "1", "-t", String(durationSec), "-i", imagePath,
     "-vf", vf, "-r", "30", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
@@ -185,7 +214,7 @@ async function buildImageClip(imagePath, durationSec, index, outPath, width, hei
 
 // A face-off clip: image A fills the left half, image B fills the right half, hstacked
 // into one widthxheight frame, then that COMBINED frame gets the same alternating zoom
-// as a solo image so a pair never looks static either.
+// as a solo image (and the same dip-to-black) so a pair never looks static either.
 async function buildFaceOffClip(imageAPath, imageBPath, durationSec, index, outPath, width, height, zoomFraction) {
   const leftW = Math.floor(width / 2);
   const rightW = width - leftW;
@@ -193,7 +222,7 @@ async function buildFaceOffClip(imageAPath, imageBPath, durationSec, index, outP
     "[0:v]" + fitFrame(leftW, height) + "[L];" +
     "[1:v]" + fitFrame(rightW, height) + "[R];" +
     "[L][R]hstack=inputs=2[combined];" +
-    "[combined]" + zoomOnly(durationSec, index, width, height, zoomFraction) + "[out]";
+    "[combined]" + zoomOnly(durationSec, index, width, height, zoomFraction) + dipToBlackVideo(durationSec) + "[out]";
   await run(FFMPEG, [
     "-y", "-loop", "1", "-t", String(durationSec), "-i", imageAPath,
     "-loop", "1", "-t", String(durationSec), "-i", imageBPath,
@@ -203,12 +232,16 @@ async function buildFaceOffClip(imageAPath, imageBPath, durationSec, index, outP
   ]);
 }
 
-async function normalizeVideoClip(inPath, outPath, width, height) {
+async function normalizeVideoClip(inPath, outPath, width, height, durationSec) {
   // Re-encode video 0 to the same resolution/fps/codec as the image clips, keeping its
-  // own audio, so it concatenates cleanly with the narrated sequence that follows.
+  // own audio, so it concatenates cleanly with the narrated sequence that follows. Gets
+  // its own dip-to-black too, so the video0 -> narration boundary matches every other
+  // cut instead of being a hard cut on its own.
   await run(FFMPEG, [
     "-y", "-i", inPath,
-    "-vf", "scale=" + width + ":" + height + ":force_original_aspect_ratio=increase,crop=" + width + ":" + height + ",setsar=1,format=yuv420p",
+    "-vf", "scale=" + width + ":" + height + ":force_original_aspect_ratio=increase,crop=" + width + ":" + height +
+      ",setsar=1,format=yuv420p" + dipToBlackVideo(durationSec),
+    "-af", "anull" + dipToBlackAudio(durationSec),
     "-r", "30", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p",
     "-c:a", "aac", "-b:a", "160k", "-ar", "24000", "-ac", "2",
     outPath
@@ -255,9 +288,12 @@ export async function assembleManualVideo(folder, outFile, opts = {}) {
     }
     log(images.length + " image slot(s), video 0: " + path.basename(videoZero));
 
-    // 1) Video 0, re-encoded to a consistent format, own audio kept.
+    // 1) Video 0, re-encoded to a consistent format, own audio kept. Its duration is
+    //    probed from the SOURCE first (not the re-encoded output) because the fade-out
+    //    timing has to be known before encoding starts.
     const clip0 = path.join(workDir, "clip0.mp4");
-    await normalizeVideoClip(videoZero, clip0, width, height);
+    const sourceClip0Duration = await probeDuration(videoZero);
+    await normalizeVideoClip(videoZero, clip0, width, height, sourceClip0Duration);
     const clip0Duration = await probeDuration(clip0);
     log("video 0 duration: " + clip0Duration.toFixed(1) + "s");
 
