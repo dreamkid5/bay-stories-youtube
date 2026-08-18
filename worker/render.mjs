@@ -375,6 +375,41 @@ function presenterKenBurns(dur, cfg, idx, W, H) {
 // the scene photo on the RIGHT (with gentle motion), this scene's narration, and karaoke
 // captions burned on top that highlight each word as it is spoken. presenter and assPath
 // are optional; without a presenter it falls back to a full-frame image.
+// Dip-to-black transitions: every clip fades in from black at its own start and fades
+// out to black at its own end. Concatenated back-to-back with a plain hard cut (the
+// existing fast stream-copy concat), this reads as a proper dip-to-black transition at
+// every boundary WITHOUT needing per-boundary crossfade blending — which would force
+// every scene join to re-encode across an overlap instead of stream-copying, and with
+// 400+ scenes per video that is exactly the kind of slow render this channel already
+// fixed once. Fade length is capped relative to the clip's own duration so a very
+// short scene never spends most of its on-screen time fading rather than being seen.
+// CF_TRANSITION_FADE_MS=0 disables it.
+export function transitionFadeSeconds(durationSec, cfg) {
+  const configured = cfg.transitionFadeMs != null ? cfg.transitionFadeMs : process.env.CF_TRANSITION_FADE_MS;
+  const requested = Number(configured != null ? configured : 200) / 1000;
+  if (!(requested > 0)) return 0;
+  return Math.max(0, Math.min(requested, durationSec * 0.15));
+}
+
+// Appends a fade-in-from-black + fade-out-to-black to a video filter output label.
+export function dipToBlackVideo(inLabel, outLabel, durationSec, cfg) {
+  const f = transitionFadeSeconds(durationSec, cfg);
+  if (f <= 0) return "[" + inLabel + "]null[" + outLabel + "]";
+  const outStart = Math.max(0, durationSec - f);
+  return "[" + inLabel + "]fade=t=in:st=0:d=" + f.toFixed(3) + ":color=black," +
+    "fade=t=out:st=" + outStart.toFixed(3) + ":d=" + f.toFixed(3) + ":color=black[" + outLabel + "]";
+}
+
+// Matching short audio fade so the visual dip never lands on a hard audio edit (which
+// can pop/click); kept short enough that it reads as a clean edit, not a volume dip.
+export function dipToBlackAudio(inLabel, outLabel, durationSec, cfg) {
+  const f = transitionFadeSeconds(durationSec, cfg);
+  if (f <= 0) return "[" + inLabel + "]anull[" + outLabel + "]";
+  const outStart = Math.max(0, durationSec - f);
+  return "[" + inLabel + "]afade=t=in:st=0:d=" + f.toFixed(3) + "," +
+    "afade=t=out:st=" + outStart.toFixed(3) + ":d=" + f.toFixed(3) + "[" + outLabel + "]";
+}
+
 function sceneClipComposite(presenter, story, audioPath, assPath, outPath, dur, cfg, idx = 0) {
   const crf = String(Number(cfg.crf) || 20);
   const W = Number(cfg.width) || 1920, H = Number(cfg.height) || 1080;
@@ -394,12 +429,15 @@ function sceneClipComposite(presenter, story, audioPath, assPath, outPath, dur, 
     filter =
       "[0:v]" + presenterKenBurns(dur, cfg, idx, Pw, H) + "[L];" +
       "[1:v]" + kenBurnsVfSize(dur, cfg, idx, Sw, H) + "[R];" +
-      "[L][R]hstack=inputs=2,format=yuv420p" + subs + "[v]";
+      "[L][R]hstack=inputs=2,format=yuv420p" + subs + "[vs];" +
+      dipToBlackVideo("vs", "v", dur, cfg);
   } else {
-    filter = "[1:v]" + kenBurnsVf(dur, cfg, idx) + ",format=yuv420p" + subs + "[v]";
+    filter = "[1:v]" + kenBurnsVf(dur, cfg, idx) + ",format=yuv420p" + subs + "[vs];" +
+      dipToBlackVideo("vs", "v", dur, cfg);
   }
+  filter += ";" + dipToBlackAudio(audioIdx + ":a:0", "a", dur, cfg);
   args.push(
-    "-filter_complex", filter, "-map", "[v]", "-map", audioIdx + ":a:0",
+    "-filter_complex", filter, "-map", "[v]", "-map", "[a]",
     "-r", "30", "-c:v", "libx264", "-preset", "veryfast", "-crf", crf, "-pix_fmt", "yuv420p",
     "-c:a", "aac", "-b:a", "160k", "-ar", "24000", "-ac", "1", "-t", String(dur), outPath
   );
@@ -455,9 +493,11 @@ export function sceneClipOverlay(host, background, audioPath, assPath, outPath, 
     "[o1][wave]overlay=" + waveX + ":" + waveY + "[o2];" +
     "[o2]drawbox=x=" + bX + ":y=" + bY + ":w=" + bW + ":h=" + bH + ":color=red@0.95:t=fill," +
       "drawtext=fontfile='" + subFont + "':text='SUBSCRIBE':fontcolor=white:fontsize=" + bFont + ":x=" + bTextX + ":y=" + bTextY + "[o3];" +
-    "[o3]format=yuv420p" + subs + "[v]";
+    "[o3]format=yuv420p" + subs + "[vs];" +
+    dipToBlackVideo("vs", "v", dur, cfg) + ";" +
+    dipToBlackAudio("aout", "a", dur, cfg);
   args.push(
-    "-filter_complex", filter, "-map", "[v]", "-map", "[aout]",
+    "-filter_complex", filter, "-map", "[v]", "-map", "[a]",
     "-r", "30", "-c:v", "libx264", "-preset", "veryfast", "-crf", crf, "-pix_fmt", "yuv420p",
     "-c:a", "aac", "-b:a", "160k", "-ar", "24000", "-ac", "1", "-t", String(dur), outPath
   );
