@@ -10,11 +10,16 @@
 //   0.<ext>          the intro video clip; keeps its own audio; plays before narration
 //   1.<ext>          image 1 (jpg/png/webp)
 //   2.<ext>          image 2
-//   ... etc, one file per line in timestamps.txt
+//   26a.<ext>        FACE-OFF: name a slot's image "<N>a" and "<N>b" (also accepted:
+//   26b.<ext>        "26 a", "26(a)", "26 (a)") to combine them into one split-screen
+//                    frame for that slot instead of two separate images.
+//   ... etc, one file (or a/b pair) per line in timestamps.txt
 //   script.txt       the full narration text, read start to finish
 //   timestamps.txt   one line per image: "1: 0:08-0:45"
 //                    times are relative to when narration STARTS (0:00 = the instant
 //                    video 0 ends), not the absolute start of the finished video.
+//                    Anything after the end time on a line (e.g. a note describing the
+//                    scene) is ignored — it is never treated as narration.
 //
 // Usage:
 //   node worker/manual-assemble.mjs <folder> [outFile]
@@ -81,7 +86,10 @@ export function parseTimestampsFile(raw) {
   for (const lineRaw of raw.split(/\r?\n/)) {
     const line = lineRaw.trim();
     if (!line || line.startsWith("#")) continue;
-    const m = line.match(/^(\d+)\s*:\s*([0-9:.]+)\s*-\s*([0-9:.]+)\s*$/);
+    // Anything after the end time (e.g. a note like "she opens the door") is a label
+    // for the human reading the file, not narration — it is matched and discarded,
+    // never fed into the script.
+    const m = line.match(/^(\d+)\s*:\s*([0-9:.]+)\s*-\s*([0-9:.]+)(?:\s+\S.*)?$/);
     if (!m) throw new Error("timestamps.txt: could not parse line: " + JSON.stringify(lineRaw));
     const index = Number(m[1]);
     const start = parseTimeToSeconds(m[2]);
@@ -110,17 +118,60 @@ async function findByIndex(folder, index, exts) {
   return match ? path.join(folder, match) : null;
 }
 
-// Slow zoom that alternates in/out per image, scaled to that image's OWN on-screen
-// duration (which can be long here) so it always reads as gentle drift, never a snap.
-export function kenBurnsFilter(durationSec, index, width, height, zoomFraction) {
+// An image slot is either a solo file ("26.jpg") or a face-off PAIR ("26a.jpg" +
+// "26b.jpg", also accepting "26 a", "26(a)", "26 (a)" for either half) that gets
+// combined into one split-screen frame. Returns null if the slot has nothing at all,
+// and throws a clear error for a half-finished pair or a solo+pair clash, rather than
+// silently picking one.
+export async function findImageAsset(folder, index, exts) {
+  const entries = await fs.readdir(folder);
+  const parsed = entries
+    .map((e) => {
+      const dot = e.lastIndexOf(".");
+      if (dot < 0) return null;
+      return { base: e.slice(0, dot), ext: e.slice(dot).toLowerCase(), full: e };
+    })
+    .filter((e) => e && exts.includes(e.ext));
+
+  const solo = parsed.find((e) => e.base === String(index));
+  const pairRe = new RegExp("^" + index + "\\s*\\(?([ab])\\)?$", "i");
+  const a = parsed.find((e) => { const m = e.base.match(pairRe); return m && m[1].toLowerCase() === "a"; });
+  const b = parsed.find((e) => { const m = e.base.match(pairRe); return m && m[1].toLowerCase() === "b"; });
+
+  if (solo && (a || b)) {
+    throw new Error("image " + index + " has both a solo file (" + solo.full + ") and a paired a/b file; use one or the other, not both");
+  }
+  if (a || b) {
+    if (!a || !b) {
+      throw new Error("image " + index + " has only one half of a face-off pair (" +
+        (a ? a.full : b.full) + "); both " + index + "a and " + index + "b are required");
+    }
+    return { type: "pair", pathA: path.join(folder, a.full), pathB: path.join(folder, b.full) };
+  }
+  if (solo) return { type: "single", path: path.join(folder, solo.full) };
+  return null;
+}
+
+// Scales+crops ANY input to exactly fill widthxheight, no zoom yet.
+function fitFrame(width, height) {
+  return "scale=" + width + ":" + height + ":force_original_aspect_ratio=increase,crop=" + width + ":" + height + ",setsar=1";
+}
+
+// Applies the slow alternating zoom to a frame that is ALREADY widthxheight.
+function zoomOnly(durationSec, index, width, height, zoomFraction) {
   const D = Math.max(0.1, durationSec);
   const zoomIn = index % 2 === 0;
   const hi = (1 + zoomFraction).toFixed(4);
   const z = zoomIn
     ? "(1+" + zoomFraction + "*t/" + D + ")"
     : "(" + hi + "-" + zoomFraction + "*t/" + D + ")";
-  return "scale=" + width + ":" + height + ":force_original_aspect_ratio=increase,crop=" + width + ":" + height + "," +
-    "scale=w='" + width + "*" + z + "':h='" + height + "*" + z + "':eval=frame,crop=" + width + ":" + height + ",setsar=1,format=yuv420p";
+  return "scale=w='" + width + "*" + z + "':h='" + height + "*" + z + "':eval=frame,crop=" + width + ":" + height + ",setsar=1,format=yuv420p";
+}
+
+// Slow zoom that alternates in/out per image, scaled to that image's OWN on-screen
+// duration (which can be long here) so it always reads as gentle drift, never a snap.
+export function kenBurnsFilter(durationSec, index, width, height, zoomFraction) {
+  return fitFrame(width, height) + "," + zoomOnly(durationSec, index, width, height, zoomFraction);
 }
 
 async function buildImageClip(imagePath, durationSec, index, outPath, width, height, zoomFraction) {
@@ -128,6 +179,26 @@ async function buildImageClip(imagePath, durationSec, index, outPath, width, hei
   await run(FFMPEG, [
     "-y", "-loop", "1", "-t", String(durationSec), "-i", imagePath,
     "-vf", vf, "-r", "30", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+    "-pix_fmt", "yuv420p", "-an", outPath
+  ]);
+}
+
+// A face-off clip: image A fills the left half, image B fills the right half, hstacked
+// into one widthxheight frame, then that COMBINED frame gets the same alternating zoom
+// as a solo image so a pair never looks static either.
+async function buildFaceOffClip(imageAPath, imageBPath, durationSec, index, outPath, width, height, zoomFraction) {
+  const leftW = Math.floor(width / 2);
+  const rightW = width - leftW;
+  const filter =
+    "[0:v]" + fitFrame(leftW, height) + "[L];" +
+    "[1:v]" + fitFrame(rightW, height) + "[R];" +
+    "[L][R]hstack=inputs=2[combined];" +
+    "[combined]" + zoomOnly(durationSec, index, width, height, zoomFraction) + "[out]";
+  await run(FFMPEG, [
+    "-y", "-loop", "1", "-t", String(durationSec), "-i", imageAPath,
+    "-loop", "1", "-t", String(durationSec), "-i", imageBPath,
+    "-filter_complex", filter, "-map", "[out]",
+    "-r", "30", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
     "-pix_fmt", "yuv420p", "-an", outPath
   ]);
 }
@@ -178,11 +249,11 @@ export async function assembleManualVideo(folder, outFile, opts = {}) {
 
     const images = [];
     for (const t of timestamps) {
-      const p = await findByIndex(folder, String(t.index), IMAGE_EXTS);
-      if (!p) throw new Error("timestamps.txt references image " + t.index + " but no matching file was found");
-      images.push({ ...t, path: p });
+      const asset = await findImageAsset(folder, t.index, IMAGE_EXTS);
+      if (!asset) throw new Error("timestamps.txt references image " + t.index + " but no matching file(s) were found");
+      images.push({ ...t, asset });
     }
-    log(images.length + " image(s), video 0: " + path.basename(videoZero));
+    log(images.length + " image slot(s), video 0: " + path.basename(videoZero));
 
     // 1) Video 0, re-encoded to a consistent format, own audio kept.
     const clip0 = path.join(workDir, "clip0.mp4");
@@ -214,15 +285,23 @@ export async function assembleManualVideo(folder, outFile, opts = {}) {
       }
     }
 
-    // 4) One silent Ken Burns clip per image, each exactly its own on-screen duration.
+    // 4) One silent Ken Burns clip per slot, each exactly its own on-screen duration.
+    //    A paired slot (26a + 26b) becomes one combined face-off frame first.
     const imageClipPaths = [];
     for (let i = 0; i < images.length; i++) {
       const im = images[i];
       const dur = im.end - im.start;
       const p = path.join(workDir, "img" + im.index + ".mp4");
-      await buildImageClip(im.path, dur, i, p, width, height, zoomFraction);
+      const zoomWord = i % 2 === 0 ? "zoom in" : "zoom out";
+      if (im.asset.type === "pair") {
+        await buildFaceOffClip(im.asset.pathA, im.asset.pathB, dur, i, p, width, height, zoomFraction);
+        log("image " + im.index + ": " + dur.toFixed(1) + "s FACE-OFF (" +
+          path.basename(im.asset.pathA) + " vs " + path.basename(im.asset.pathB) + ", " + zoomWord + ")");
+      } else {
+        await buildImageClip(im.asset.path, dur, i, p, width, height, zoomFraction);
+        log("image " + im.index + ": " + dur.toFixed(1) + "s (" + zoomWord + ")");
+      }
       imageClipPaths.push(p);
-      log("image " + im.index + ": " + dur.toFixed(1) + "s (" + (i % 2 === 0 ? "zoom in" : "zoom out") + ")");
     }
 
     // 5) Concatenate the silent image clips into one continuous picture track.
