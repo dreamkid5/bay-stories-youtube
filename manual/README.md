@@ -42,26 +42,41 @@ never treated as narration:
 ```
 
 If your narration ends up a little longer or shorter than your timestamps add
-up to, the tool automatically stretches the *last* image to match, so picture
-and voice always finish together.
+up to, the tool automatically rescales every image's timing by the same small
+percentage (not just the last one), so relative pacing is preserved and
+picture and voice always finish together.
 
 ## 4. Upload it — directly on GitHub, no terminal needed
 
-1. On your Mac, gather all the files above into **one folder** named your
-   story's title (e.g. `my-fiance-story`).
-2. Go to your repo: **github.com/dreamkid5/bay-stories-youtube**
-3. Open the `manual` folder.
-4. Click **Add file → Upload files**.
-5. **Drag your whole folder** (not the individual files one by one) from
-   Finder into the browser drop zone. In Chrome or Edge this preserves the
-   folder structure automatically.
-   - *If you're on Safari and it doesn't keep the folder structure:* click
-     **Add file → Create new file**, and for the file name type the full path
-     first, e.g. `manual/my-fiance-story/script.txt` — GitHub creates the
-     folder for you. Paste the content, commit, then go back to
-     **Add file → Upload files** *inside* that now-visible folder for the rest.
-6. Scroll down, type a short commit message, and click **Commit changes**
+**Dragging a whole folder into GitHub's upload page is unreliable** — it only
+works in some browsers (Chrome/Edge, sometimes), and many setups will only let
+you pick individual files, not a folder, no matter what you drag. The
+reliable method sidesteps that entirely: **create the folder first with one
+small file, then upload everything else into it.**
+
+1. Go to your repo: **github.com/dreamkid5/bay-stories-youtube**
+2. Click **Add file → Create new file**
+3. In the filename box, type the **full path**, including your video's folder
+   name, e.g.:
+   ```
+   manual/my-fiance-story/title.txt
+   ```
+   Put your video's title in the text box (or anything, as a placeholder).
+   Commit — this instantly creates the `manual/my-fiance-story/` folder.
+4. Go back to the repo and **navigate into that folder** (`manual` →
+   `my-fiance-story`) — you are now browsing inside it.
+5. Click **Add file → Upload files**. Click **"choose your files"** (skip
+   drag-and-drop) — this opens your normal Finder picker.
+6. **Select multiple files at once**: click the first file, then hold **Cmd**
+   and click each additional one (or press **Cmd+A** to select everything in
+   the folder) — grab all your images, `0.mp4`, `script.txt`, and
+   `timestamps.txt` in one go.
+7. Scroll down, type a short commit message, and click **Commit changes**
    (commit directly to the `main` branch).
+
+Because you uploaded while already browsing inside the right folder, every
+file lands in the right place — no folder-drag support needed, works in any
+browser including Safari.
 
 ## What happens next
 
@@ -77,5 +92,6 @@ and voice always finish together.
 **Check progress any time:** github.com/dreamkid5/bay-stories-youtube →
 **Actions** tab → **"Publish manual videos to YouTube"**.
 
-**Reminder:** this repository is private, but pushing a folder here still
-puts its raw video/images into GitHub's history for this repo.
+**Reminder:** this repository is public, so pushing a folder here makes its
+raw video/images visible on GitHub from the moment you push — same as your
+other videos, which are destined to be public on YouTube anyway.
