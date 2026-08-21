@@ -81,29 +81,108 @@ export function parseTimeToSeconds(raw) {
   return nums[0];
 }
 
-export function parseTimestampsFile(raw) {
-  const entries = [];
+// A colon time (m:ss, mm:ss, or h:mm:ss). Bare-second times aren't recognized here
+// on purpose: prose is full of loose numbers, and requiring a colon is what lets the
+// parser tell a real cue apart from "in 3 to 4 days".
+const TIME = "\\d{1,3}:\\d{2}(?::\\d{2})?";
+// The FIRST "time <dash|to> time" span on a line. Any dash (-, en –, em —), a tilde,
+// an arrow, or the word "to" separates start from end. Whatever follows (" — SCENE 01",
+// a mood note, a camera direction) is ignored.
+const RANGE_RE = new RegExp("(" + TIME + ")\\s*(?:-|–|—|~|→|to)\\s*(" + TIME + ")", "i");
+// An explicit image number written as SCENE/IMAGE/SHOT/SLIDE/FRAME/PIC N.
+const SCENE_RE = /\b(?:scene|image|img|shot|slide|frame|pic(?:ture)?)\s*#?\s*(\d{1,3})\b/i;
+// A line that plainly means to be a clean "N: start-end" entry: it starts with a number
+// then a COLON (not a "1." list bullet, not a bare time). Used only to decide whether a
+// line with NO parseable range is a typo worth shouting about vs. prose worth ignoring.
+const LOOKS_LIKE_CLEAN_ENTRY_RE = /^\s*\d{1,3}\s*:\s*\S/;
+
+// Pull image cues out of a timestamps file that may ALSO contain a full shot list:
+// narration notes, camera directions, image descriptions, ACT headers, blank lines.
+// A line becomes a cue only if it holds a real time range; the image number comes from a
+// leading "N:" or a "SCENE N" token. Range lines with no derivable number (a section
+// sub-beat like "39:00–39:20 — THE FAMILY") are dropped once any numbered cue exists, so
+// the shot list's prose can never sneak in as narration or as a phantom image.
+export function parseTimestampsFile(raw, log) {
+  const note = typeof log === "function" ? log : () => {};
+  const candidates = []; // { index: number|null, start, end }
+  let ignoredProse = 0;
+
   for (const lineRaw of raw.split(/\r?\n/)) {
     const line = lineRaw.trim();
     if (!line || line.startsWith("#")) continue;
-    // Anything after the end time (e.g. a note like "she opens the door") is a label
-    // for the human reading the file, not narration — it is matched and discarded,
-    // never fed into the script.
-    const m = line.match(/^(\d+)\s*:\s*([0-9:.]+)\s*-\s*([0-9:.]+)(?:\s+\S.*)?$/);
-    if (!m) throw new Error("timestamps.txt: could not parse line: " + JSON.stringify(lineRaw));
-    const index = Number(m[1]);
-    const start = parseTimeToSeconds(m[2]);
-    const end = parseTimeToSeconds(m[3]);
-    if (end <= start) throw new Error("timestamps.txt: image " + index + " has an end time at or before its start time");
-    entries.push({ index, start, end });
+
+    const r = line.match(RANGE_RE);
+    if (!r) {
+      // No time range. If it looks like a botched clean entry ("1: not-a-range"), that is
+      // almost certainly a mistake the user wants flagged — losing it would drop an image
+      // silently. Everything else (prose, headers, "Image: Scene 3 — ...") is ignored.
+      if (LOOKS_LIKE_CLEAN_ENTRY_RE.test(line)) {
+        throw new Error("timestamps.txt: could not parse line: " + JSON.stringify(lineRaw));
+      }
+      ignoredProse++;
+      continue;
+    }
+
+    const start = parseTimeToSeconds(r[1]);
+    const end = parseTimeToSeconds(r[2]);
+    if (end <= start) {
+      throw new Error("timestamps.txt: a cue (" + JSON.stringify(line) +
+        ") has an end time at or before its start time");
+    }
+
+    // Image number: prefer a leading "N:" written before the range, else a SCENE/IMAGE
+    // token anywhere on the line, else leave it unnumbered for now.
+    let index = null;
+    const before = line.slice(0, r.index);
+    const lead = before.match(/(\d{1,3})\s*[:.]?\s*$/);
+    if (lead) index = Number(lead[1]);
+    else {
+      const scene = line.match(SCENE_RE);
+      if (scene) index = Number(scene[1]);
+    }
+    candidates.push({ index, start, end });
   }
-  if (!entries.length) throw new Error("timestamps.txt has no entries");
-  entries.sort((a, b) => a.index - b.index);
+
+  if (!candidates.length) throw new Error("timestamps.txt has no entries");
+
+  // If ANY cue carries an explicit number, that is the authoritative set — drop the
+  // unnumbered ones (section sub-beats, stray ranges in prose). Only when NOTHING is
+  // numbered do we fall back to numbering cues 1..N in the order they appear.
+  const numbered = candidates.filter((c) => c.index != null);
+  let picked;
+  if (numbered.length) {
+    const dropped = candidates.length - numbered.length;
+    if (dropped) note("timestamps.txt: ignored " + dropped +
+      " time range(s) with no image number (section markers / stray ranges).");
+    picked = numbered;
+  } else {
+    picked = candidates.map((c, i) => ({ index: i + 1, start: c.start, end: c.end }));
+    note("timestamps.txt: no image numbers found; numbering cues 1.." + picked.length +
+      " in the order they appear.");
+  }
+  if (ignoredProse) note("timestamps.txt: ignored " + ignoredProse +
+    " non-timing line(s) (notes, headers, descriptions).");
+
+  // Merge duplicates (e.g. a face-off written as two "SCENE 26" lines) into one span.
+  const byIndex = new Map();
+  for (const c of picked) {
+    const prev = byIndex.get(c.index);
+    if (prev) {
+      prev.start = Math.min(prev.start, c.start);
+      prev.end = Math.max(prev.end, c.end);
+      note("timestamps.txt: image " + c.index + " appears more than once; merged into one span.");
+    } else {
+      byIndex.set(c.index, { index: c.index, start: c.start, end: c.end });
+    }
+  }
+
+  const entries = [...byIndex.values()].sort((a, b) => a.index - b.index);
   for (let i = 1; i < entries.length; i++) {
     if (entries[i].start < entries[i - 1].end) {
       throw new Error("timestamps.txt: image " + entries[i].index + " starts before image " + entries[i - 1].index + " ends");
     }
   }
+  note("timestamps.txt: " + entries.length + " image cue(s) parsed.");
   return entries;
 }
 
@@ -309,7 +388,7 @@ export async function assembleManualVideo(folder, outFile, opts = {}) {
     const script = (await fs.readFile(path.join(folder, "script.txt"), "utf8")).trim();
     if (!script) throw new Error("script.txt is empty");
     const timestampsRaw = await fs.readFile(path.join(folder, "timestamps.txt"), "utf8");
-    const timestamps = parseTimestampsFile(timestampsRaw);
+    const timestamps = parseTimestampsFile(timestampsRaw, log);
 
     const images = [];
     for (const t of timestamps) {
