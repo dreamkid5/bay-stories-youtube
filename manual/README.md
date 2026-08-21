@@ -41,6 +41,22 @@ never treated as narration:
 26: 0:40-0:55 she opens the door and finds him there
 ```
 
+**You don't have to strip your file down to just those lines.** You can paste a
+full shot list — ACT headers, narration notes, camera directions, image
+descriptions and blank lines — and the tool pulls out only the timing cues,
+ignoring everything else. It recognises two cue styles:
+
+```
+1: 0:00-1:00                 ← "number: start-end"
+00:00–01:00 — SCENE 01       ← a time range with the image number in "SCENE N"
+```
+
+Dashes can be `-`, `–` or `—`. The image number comes from the leading `N:` or
+from a `SCENE N` / `IMAGE N` token. A time range with **no** image number (a
+section sub-beat like `39:00–39:20 — THE FAMILY`) is skipped, so it never turns
+into a phantom extra image. The render log prints how many cues it kept and how
+many lines it ignored, so you can confirm it read what you intended.
+
 If your narration ends up a little longer or shorter than your timestamps add
 up to, the tool automatically rescales every image's timing by the same small
 percentage (not just the last one), so relative pacing is preserved and

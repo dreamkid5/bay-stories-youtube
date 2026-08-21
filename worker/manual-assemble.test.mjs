@@ -70,6 +70,60 @@ test("parseTimestampsFile ignores a trailing note after the time range, never tr
   assert.deepEqual(entries, [{ index: 26, start: 70, end: 80 }]);
 });
 
+test("parseTimestampsFile reads a full shot-list doc: keeps the SCENE cues, drops every prose/notes/header line", () => {
+  // The exact shape of a real uploaded planning file: en-dash time ranges, image number
+  // in a "SCENE NN" token, and paragraphs of narration notes and camera directions between.
+  const doc = [
+    "ACT 1 — THE NIGHT THAT STARTED EVERYTHING",
+    "00:00–01:00 — SCENE 01",
+    "THE NIGHT STOP",
+    "",
+    "Narration section:",
+    '"The night I met Sergeant Cole Radley..."',
+    "Image: Scene 1 — Route 9 traffic stop.",
+    "Camera treatment: Very slow push-in toward Desmond.",
+    "",
+    "01:00–02:00 — SCENE 02",
+    "Mood: Threatening, controlled, uncomfortable.",
+    "02:00–03:00 — SCENE 03",
+  ].join("\n");
+  const entries = parseTimestampsFile(doc);
+  assert.deepEqual(entries, [
+    { index: 1, start: 0, end: 60 },
+    { index: 2, start: 60, end: 120 },
+    { index: 3, start: 120, end: 180 },
+  ]);
+});
+
+test("parseTimestampsFile drops a section sub-beat (a time range with no image number) once numbered cues exist", () => {
+  // "39:00–39:20 — THE FAMILY" is a titled sub-beat, not a numbered image: it must not
+  // become a phantom image 41.
+  const entries = parseTimestampsFile([
+    "39:00–40:00 — SCENE 40",
+    "39:00–39:20 — THE FAMILY",
+    "39:20–39:40 — REBUILDING",
+  ].join("\n"));
+  assert.deepEqual(entries, [{ index: 40, start: 2340, end: 2400 }]);
+});
+
+test("parseTimestampsFile numbers unnumbered cues 1..N in order only when NOTHING is numbered", () => {
+  assert.deepEqual(parseTimestampsFile("0:00-0:06\n0:06-0:12"), [
+    { index: 1, start: 0, end: 6 },
+    { index: 2, start: 6, end: 12 },
+  ]);
+});
+
+test("parseTimestampsFile merges a repeated image number (e.g. a face-off written twice) into one span", () => {
+  assert.deepEqual(parseTimestampsFile("SCENE 26 0:00-0:10\nSCENE 26 0:10-0:20"), [
+    { index: 26, start: 0, end: 20 },
+  ]);
+});
+
+test("parseTimestampsFile still shouts about a botched clean entry rather than silently dropping an image", () => {
+  // A line that clearly meant to be "1: <range>" but is malformed is a mistake, not prose.
+  assert.throws(() => parseTimestampsFile("1: 0:00-0:10\n2: not-a-range"), /could not parse line/);
+});
+
 test("findImageAsset finds a plain solo image by index", async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "griot-manual-asset-"));
   try {
