@@ -15,8 +15,8 @@ Example: `manual/my-fiance-story/`
 
 | File | What it is |
 |---|---|
-| `0.mp4` | Your intro video clip. Keeps **its own sound**. Plays first, before the narration starts. |
-| `1.jpg`, `2.jpg`, `3.jpg` ... | Images shown in order after video 0, each held on screen for the time you set in `timestamps.txt`, with a slow zoom in/out. |
+| `0.mp4` | **Optional** intro video clip. Keeps **its own sound**. Plays first, before the narration starts. Leave it out and the video simply starts on image 1. |
+| `1.jpg`, `2.jpg`, `3.jpg` ... | Images shown in order (after video 0 if you included one), each held on screen for the time you set in `timestamps.txt`, with a slow zoom in/out. |
 | `26a.jpg` + `26b.jpg` | Optional: two images sharing the same number (`a`/`b`) become **one face-off split-screen** for that slot instead of two separate images. (`26 a`, `26(a)`, `26 (a)` also work.) |
 | `script.txt` | The full narration text, read start to finish in the channel's locked voice. |
 | `timestamps.txt` | When each image appears on screen — see below. |
@@ -25,8 +25,8 @@ Example: `manual/my-fiance-story/`
 ## 3. Write timestamps.txt
 
 One line per image number, `start-end`, **relative to when the narration
-starts** (0:00 = the exact instant video 0 ends — not the start of the whole
-video):
+starts** (0:00 = the exact instant video 0 ends, or the very start of the video
+if you have no video 0):
 
 ```
 1: 0:00-0:12
