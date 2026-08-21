@@ -302,8 +302,10 @@ export async function assembleManualVideo(folder, outFile, opts = {}) {
 
   const workDir = await fs.mkdtemp(path.join(path.dirname(outFile), ".manual-assemble-"));
   try {
+    // Video 0 is an OPTIONAL cold-open clip (with its own audio) that plays before the
+    // narration. If the folder has no file named 0.<ext>, the video simply starts on the
+    // narrated image sequence.
     const videoZero = await findByIndex(folder, "0", VIDEO_EXTS);
-    if (!videoZero) throw new Error("no video named 0.<ext> found in " + folder);
     const script = (await fs.readFile(path.join(folder, "script.txt"), "utf8")).trim();
     if (!script) throw new Error("script.txt is empty");
     const timestampsRaw = await fs.readFile(path.join(folder, "timestamps.txt"), "utf8");
@@ -315,16 +317,19 @@ export async function assembleManualVideo(folder, outFile, opts = {}) {
       if (!asset) throw new Error("timestamps.txt references image " + t.index + " but no matching file(s) were found");
       images.push({ ...t, asset });
     }
-    log(images.length + " image slot(s), video 0: " + path.basename(videoZero));
+    log(images.length + " image slot(s), video 0: " + (videoZero ? path.basename(videoZero) : "none (starts on images)"));
 
-    // 1) Video 0, re-encoded to a consistent format, own audio kept. Its duration is
-    //    probed from the SOURCE first (not the re-encoded output) because the fade-out
-    //    timing has to be known before encoding starts.
-    const clip0 = path.join(workDir, "clip0.mp4");
-    const sourceClip0Duration = await probeDuration(videoZero);
-    await normalizeVideoClip(videoZero, clip0, width, height, sourceClip0Duration);
-    const clip0Duration = await probeDuration(clip0);
-    log("video 0 duration: " + clip0Duration.toFixed(1) + "s");
+    // 1) Video 0 (optional), re-encoded to a consistent format, own audio kept. Its
+    //    duration is probed from the SOURCE first (not the re-encoded output) because the
+    //    fade-out timing has to be known before encoding starts.
+    let clip0 = null;
+    if (videoZero) {
+      clip0 = path.join(workDir, "clip0.mp4");
+      const sourceClip0Duration = await probeDuration(videoZero);
+      await normalizeVideoClip(videoZero, clip0, width, height, sourceClip0Duration);
+      const clip0Duration = await probeDuration(clip0);
+      log("video 0 duration: " + clip0Duration.toFixed(1) + "s");
+    }
 
     // 2) Narration for the WHOLE script, once, in the locked voice.
     const narrationMp3 = path.join(workDir, "narration.mp3");
@@ -387,7 +392,12 @@ export async function assembleManualVideo(folder, outFile, opts = {}) {
     ]);
 
     // 8) Final: video 0 (own audio) followed by the narrated, captioned image sequence.
-    await concatClips([clip0, narratedImages], outFile, workDir);
+    //    With no video 0, the narrated image sequence IS the whole video.
+    if (clip0) {
+      await concatClips([clip0, narratedImages], outFile, workDir);
+    } else {
+      await concatClips([narratedImages], outFile, workDir);
+    }
     log("done: " + outFile);
     return outFile;
   } finally {
