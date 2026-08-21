@@ -96,8 +96,20 @@ export async function publishPendingManualVideos(opts = {}) {
       await saveLedger(ledgerPath, ledger);
       log("  uploaded: https://youtu.be/" + videoId);
 
-      await fs.rm(folder, { recursive: true, force: true });
-      log("  removed manual/" + name + " (its record lives on in the ledger and on YouTube)");
+      // Clear the source assets (images, video 0, script, timestamps) but leave
+      // output.mp4 in place. It is gitignored, so it is never committed -- but it
+      // must still exist on disk when THIS script exits, because the SEPARATE
+      // "Save rendered videos as a downloadable artifact" workflow step runs
+      // afterward and can only archive files that still exist. Deleting the whole
+      // folder here (the old behavior) beat that step to the file every time, so
+      // every finished video silently had no downloadable artifact.
+      const remaining = await fs.readdir(folder);
+      for (const entry of remaining) {
+        if (entry === "output.mp4") continue;
+        await fs.rm(path.join(folder, entry), { recursive: true, force: true });
+      }
+      log("  cleared source assets from manual/" + name +
+        " (output.mp4 kept for the artifact step; its record lives on in the ledger and on YouTube)");
       processed.push(name);
     } catch (e) {
       log("  FAILED: " + e.message);

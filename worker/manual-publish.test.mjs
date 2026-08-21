@@ -75,6 +75,17 @@ test("publishPendingManualVideos is a safe no-op when YouTube credentials are mi
   }
 });
 
+test("after a successful upload, output.mp4 is kept on disk (not deleted with the rest of the folder) so the workflow's separate artifact-archive step can still find it", async () => {
+  const source = await fs.readFile(new URL("./manual-publish.mjs", import.meta.url), "utf8");
+  // The old bug: fs.rm(folder, {...}) deleted output.mp4 along with everything else,
+  // inside THIS script -- before the separate "Save ... artifact" workflow step
+  // (which runs after this script exits) ever got a chance to archive the file.
+  assert.doesNotMatch(source, /fs\.rm\(folder, \{ recursive: true, force: true \}\)/);
+  // The fix: delete every entry except output.mp4.
+  assert.match(source, /if \(entry === "output\.mp4"\) continue;/);
+  assert.match(source, /await fs\.rm\(path\.join\(folder, entry\), \{ recursive: true, force: true \}\)/);
+});
+
 test("publishPendingManualVideos reports nothing to do when manual/ has no pending folders", async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "griot-manual-publish-"));
   try {
