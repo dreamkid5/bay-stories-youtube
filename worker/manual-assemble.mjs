@@ -229,6 +229,52 @@ export function reconcileImageTimingToNarration(images, narrationDuration, log) 
   return images;
 }
 
+// If a line is JUST a scene marker, return its number; otherwise null. Recognises
+// "SCENE 7" / "Scene 07 — TITLE" (any trailing title is dropped, never narrated),
+// "[7]", "#7", "7.", "7)" and a bare "7" on its own line. Deliberately strict: the line
+// must START with the marker so a sentence that merely mentions "scene" is left alone.
+export function sceneMarkerIndex(line) {
+  const s = String(line).trim();
+  let m;
+  if ((m = s.match(/^(?:scene|part|chapter|segment)\s*#?\s*(\d{1,3})\b/i))) return Number(m[1]);
+  if ((m = s.match(/^\[\s*(\d{1,3})\s*\]$/))) return Number(m[1]);
+  if ((m = s.match(/^#\s*(\d{1,3})$/))) return Number(m[1]);
+  if ((m = s.match(/^(\d{1,3})\s*[.)\]:]\s*$/))) return Number(m[1]);
+  if ((m = s.match(/^(\d{1,3})$/))) return Number(m[1]);
+  return null;
+}
+
+// Split a script into per-scene narration segments using SCENE-marker lines. This is what
+// makes picture and voice stay locked: each image is shown for exactly as long as ITS
+// scene's narration actually takes, instead of a hand-estimated timestamp. Returns an
+// ordered [{ index, text }] (marker number -> image index), or null when the script has no
+// markers at all (the caller then falls back to the timestamps.txt timing path). Any text
+// before the first marker is folded into the first scene so nothing is dropped. Throws if a
+// marked scene has no narration text under it (its on-screen time would be undefined).
+export function parseScriptScenes(scriptText) {
+  const lines = String(scriptText).split(/\r?\n/);
+  const scenes = [];
+  const preamble = [];
+  let cur = null;
+  for (const line of lines) {
+    const idx = sceneMarkerIndex(line);
+    if (idx != null) {
+      cur = { index: idx, lines: [] };
+      scenes.push(cur);
+    } else if (cur) {
+      cur.lines.push(line);
+    } else {
+      preamble.push(line);
+    }
+  }
+  if (!scenes.length) return null;
+  if (preamble.join("").trim()) scenes[0].lines = [...preamble, ...scenes[0].lines];
+  const out = scenes.map((s) => ({ index: s.index, text: s.lines.join("\n").trim() }));
+  const empty = out.find((s) => !s.text);
+  if (empty) throw new Error("script.txt: SCENE " + empty.index + " has no narration text beneath it");
+  return out;
+}
+
 async function findByIndex(folder, index, exts) {
   const entries = await fs.readdir(folder);
   const match = entries.find((e) => {
@@ -427,6 +473,52 @@ function ffEscapePath(p) {
   return p.replace(/\\/g, "\\\\").replace(/:/g, "\\:").replace(/'/g, "\\'");
 }
 
+// Build ONE silent Ken Burns clip for a slot, dispatching solo vs 2-4 image split, and log
+// what it did. Shared by both timing paths so a slot always looks identical either way.
+async function buildSlotClip(im, i, durationSec, outPath, width, height, zoomFraction, log) {
+  const zoomWord = i % 2 === 0 ? "zoom in" : "zoom out";
+  if (im.asset.type === "pair" || im.asset.type === "group") {
+    await buildSplitClip(im.asset.paths, durationSec, i, outPath, width, height, zoomFraction);
+    const names = im.asset.paths.map((x) => path.basename(x));
+    const label = im.asset.paths.length === 2 ? "FACE-OFF" : im.asset.paths.length + "-UP SPLIT";
+    log("image " + im.index + ": " + durationSec.toFixed(1) + "s " + label + " (" + names.join(" | ") + ", " + zoomWord + ")");
+  } else {
+    await buildImageClip(im.asset.path, durationSec, i, outPath, width, height, zoomFraction);
+    log("image " + im.index + ": " + durationSec.toFixed(1) + "s (" + zoomWord + ")");
+  }
+}
+
+// Narrate a chunk of text in the locked voice, returning its real duration (seconds). The
+// mp3 and its word-timing JSON are written to the given paths.
+async function narrateSegment(text, mp3Path, wordsPath, workDir, tag) {
+  const txtFile = path.join(workDir, "tts_" + tag + ".txt");
+  await fs.writeFile(txtFile, text);
+  await run("python3", [path.join(HERE, "tts_words.py"), txtFile, LOCKED_VOICE, mp3Path, wordsPath, RATE, PITCH]);
+  return probeDuration(mp3Path);
+}
+
+// Karaoke captions (ASS) from a word-timing JSON.
+async function buildCaptionsAss(wordsJson, assPath, width, height) {
+  const fontSize = Math.round(height * 0.062);
+  await run("python3", [
+    path.join(HERE, "captions.py"), wordsJson, assPath, String(width), String(height),
+    path.join(FONTS_DIR, "Montserrat-ExtraBold.ttf"), "Montserrat ExtraBold",
+    String(fontSize), "#6A12C0", "4", "0.72"
+  ]);
+}
+
+// Burn captions onto a silent picture clip and mux the narration audio under it.
+async function muxNarrationCaptions(silentClip, mp3, assPath, outPath) {
+  await run(FFMPEG, [
+    "-y", "-i", silentClip, "-i", mp3,
+    "-filter_complex", "[0:v]subtitles='" + ffEscapePath(assPath) + "':fontsdir='" + ffEscapePath(FONTS_DIR) + "'[v]",
+    "-map", "[v]", "-map", "1:a:0",
+    "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p",
+    "-c:a", "aac", "-b:a", "160k", "-ar", "24000", "-ac", "2",
+    "-shortest", outPath
+  ]);
+}
+
 export async function assembleManualVideo(folder, outFile, opts = {}) {
   const width = opts.width || Number(process.env.CF_WIDTH) || 1920;
   const height = opts.height || Number(process.env.CF_HEIGHT) || 1080;
@@ -441,20 +533,10 @@ export async function assembleManualVideo(folder, outFile, opts = {}) {
     const videoZero = await findByIndex(folder, "0", VIDEO_EXTS);
     const script = (await fs.readFile(path.join(folder, "script.txt"), "utf8")).trim();
     if (!script) throw new Error("script.txt is empty");
-    const timestampsRaw = await fs.readFile(path.join(folder, "timestamps.txt"), "utf8");
-    const timestamps = parseTimestampsFile(timestampsRaw, log);
 
-    const images = [];
-    for (const t of timestamps) {
-      const asset = await findImageAsset(folder, t.index, IMAGE_EXTS);
-      if (!asset) throw new Error("timestamps.txt references image " + t.index + " but no matching file(s) were found");
-      images.push({ ...t, asset });
-    }
-    log(images.length + " image slot(s), video 0: " + (videoZero ? path.basename(videoZero) : "none (starts on images)"));
-
-    // 1) Video 0 (optional), re-encoded to a consistent format, own audio kept. Its
-    //    duration is probed from the SOURCE first (not the re-encoded output) because the
-    //    fade-out timing has to be known before encoding starts.
+    // Video 0 (optional), re-encoded to a consistent format, own audio kept. Its duration
+    // is probed from the SOURCE first (not the re-encoded output) because the fade-out
+    // timing has to be known before encoding starts.
     let clip0 = null;
     if (videoZero) {
       clip0 = path.join(workDir, "clip0.mp4");
@@ -464,75 +546,82 @@ export async function assembleManualVideo(folder, outFile, opts = {}) {
       log("video 0 duration: " + clip0Duration.toFixed(1) + "s");
     }
 
-    // 2) Narration for the WHOLE script, once, in the locked voice.
-    const narrationMp3 = path.join(workDir, "narration.mp3");
-    const wordsJson = path.join(workDir, "narration.words.json");
-    const scriptTxtFile = path.join(workDir, "script_for_tts.txt");
-    await fs.writeFile(scriptTxtFile, script);
-    await run("python3", [
-      path.join(HERE, "tts_words.py"), scriptTxtFile, LOCKED_VOICE, narrationMp3, wordsJson, RATE, PITCH
-    ]);
-    const narrationDuration = await probeDuration(narrationMp3);
-    log("narration duration: " + narrationDuration.toFixed(1) + "s (" + LOCKED_VOICE + ")");
+    const bodyClips = [];
+    const scenes = parseScriptScenes(script);
 
-    // 3) Your timestamps are authoritative, but reconcile any drift against the whole
-    //    sequence so picture and voice finish together instead of one cutting off early.
-    reconcileImageTimingToNarration(images, narrationDuration, log);
+    if (scenes) {
+      // ── SCENE-SYNCED MODE ──────────────────────────────────────────────────────────
+      // script.txt is split into scenes by its SCENE markers. Each scene is narrated on
+      // its own, and its image is shown for EXACTLY that narration's real length — so
+      // picture and voice stay locked together with no estimating and no drift. timestamps
+      // .txt is not needed here (image order/number comes from the SCENE markers).
+      log("scene-synced timing: " + scenes.length + " scene(s); each image runs exactly as long as its own narration.");
+      try {
+        await fs.access(path.join(folder, "timestamps.txt"));
+        log("note: timestamps.txt is present but ignored in scene-synced mode (the narration sets the timing).");
+      } catch { /* no timestamps.txt — expected in this mode */ }
 
-    // 4) One silent Ken Burns clip per slot, each exactly its own on-screen duration.
-    //    A paired slot (26a + 26b) becomes one combined face-off frame first.
-    const imageClipPaths = [];
-    for (let i = 0; i < images.length; i++) {
-      const im = images[i];
-      const dur = im.end - im.start;
-      const p = path.join(workDir, "img" + im.index + ".mp4");
-      const zoomWord = i % 2 === 0 ? "zoom in" : "zoom out";
-      if (im.asset.type === "pair" || im.asset.type === "group") {
-        await buildSplitClip(im.asset.paths, dur, i, p, width, height, zoomFraction);
-        const names = im.asset.paths.map((x) => path.basename(x));
-        const label = im.asset.paths.length === 2 ? "FACE-OFF" : im.asset.paths.length + "-UP SPLIT";
-        log("image " + im.index + ": " + dur.toFixed(1) + "s " + label + " (" +
-          names.join(" | ") + ", " + zoomWord + ")");
-      } else {
-        await buildImageClip(im.asset.path, dur, i, p, width, height, zoomFraction);
-        log("image " + im.index + ": " + dur.toFixed(1) + "s (" + zoomWord + ")");
+      const slots = [];
+      for (const sc of scenes) {
+        const asset = await findImageAsset(folder, sc.index, IMAGE_EXTS);
+        if (!asset) throw new Error("script.txt has SCENE " + sc.index + " but no image file " + sc.index + " was found");
+        slots.push({ index: sc.index, asset, text: sc.text });
       }
-      imageClipPaths.push(p);
-    }
+      log(slots.length + " scene image(s), video 0: " + (videoZero ? path.basename(videoZero) : "none (starts on images)"));
 
-    // 5) Concatenate the silent image clips into one continuous picture track.
-    const imagesSilent = path.join(workDir, "images_silent.mp4");
-    await concatClips(imageClipPaths, imagesSilent, workDir);
-
-    // 6) Karaoke captions from the narration's word timings.
-    const captionsAss = path.join(workDir, "captions.ass");
-    const fontSize = Math.round(height * 0.062);
-    await run("python3", [
-      path.join(HERE, "captions.py"),
-      wordsJson, captionsAss, String(width), String(height),
-      path.join(FONTS_DIR, "Montserrat-ExtraBold.ttf"), "Montserrat ExtraBold",
-      String(fontSize), "#6A12C0", "4", "0.72"
-    ]);
-
-    // 7) Mux narration + captions onto the image sequence.
-    const narratedImages = path.join(workDir, "narrated_images.mp4");
-    await run(FFMPEG, [
-      "-y", "-i", imagesSilent, "-i", narrationMp3,
-      "-filter_complex", "[0:v]subtitles='" + ffEscapePath(captionsAss) + "':fontsdir='" + ffEscapePath(FONTS_DIR) + "'[v]",
-      "-map", "[v]", "-map", "1:a:0",
-      "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p",
-      "-c:a", "aac", "-b:a", "160k",
-      "-shortest",
-      narratedImages
-    ]);
-
-    // 8) Final: video 0 (own audio) followed by the narrated, captioned image sequence.
-    //    With no video 0, the narrated image sequence IS the whole video.
-    if (clip0) {
-      await concatClips([clip0, narratedImages], outFile, workDir);
+      for (let i = 0; i < slots.length; i++) {
+        const sl = slots[i];
+        const segMp3 = path.join(workDir, "seg" + sl.index + ".mp3");
+        const segWords = path.join(workDir, "seg" + sl.index + ".words.json");
+        const dur = await narrateSegment(sl.text, segMp3, segWords, workDir, "s" + sl.index);
+        const silent = path.join(workDir, "sil" + sl.index + ".mp4");
+        await buildSlotClip(sl, i, dur, silent, width, height, zoomFraction, log);
+        const ass = path.join(workDir, "cap" + sl.index + ".ass");
+        await buildCaptionsAss(segWords, ass, width, height);
+        const narrated = path.join(workDir, "scene" + sl.index + ".mp4");
+        await muxNarrationCaptions(silent, segMp3, ass, narrated);
+        bodyClips.push(narrated);
+      }
     } else {
-      await concatClips([narratedImages], outFile, workDir);
+      // ── LEGACY TIMESTAMPS MODE ─────────────────────────────────────────────────────
+      // No SCENE markers in the script: fall back to the whole-script narration timed by
+      // timestamps.txt, rescaled to the real narration length so picture and voice at least
+      // finish together (per-scene drift is possible — add SCENE markers to avoid it).
+      const timestampsRaw = await fs.readFile(path.join(folder, "timestamps.txt"), "utf8");
+      const timestamps = parseTimestampsFile(timestampsRaw, log);
+      const images = [];
+      for (const t of timestamps) {
+        const asset = await findImageAsset(folder, t.index, IMAGE_EXTS);
+        if (!asset) throw new Error("timestamps.txt references image " + t.index + " but no matching file(s) were found");
+        images.push({ ...t, asset });
+      }
+      log(images.length + " image slot(s), video 0: " + (videoZero ? path.basename(videoZero) : "none (starts on images)"));
+
+      const narrationMp3 = path.join(workDir, "narration.mp3");
+      const wordsJson = path.join(workDir, "narration.words.json");
+      const narrationDuration = await narrateSegment(script, narrationMp3, wordsJson, workDir, "all");
+      log("narration duration: " + narrationDuration.toFixed(1) + "s (" + LOCKED_VOICE + ")");
+      reconcileImageTimingToNarration(images, narrationDuration, log);
+
+      const imageClipPaths = [];
+      for (let i = 0; i < images.length; i++) {
+        const im = images[i];
+        const p = path.join(workDir, "img" + im.index + ".mp4");
+        await buildSlotClip(im, i, im.end - im.start, p, width, height, zoomFraction, log);
+        imageClipPaths.push(p);
+      }
+      const imagesSilent = path.join(workDir, "images_silent.mp4");
+      await concatClips(imageClipPaths, imagesSilent, workDir);
+      const captionsAss = path.join(workDir, "captions.ass");
+      await buildCaptionsAss(wordsJson, captionsAss, width, height);
+      const narratedImages = path.join(workDir, "narrated_images.mp4");
+      await muxNarrationCaptions(imagesSilent, narrationMp3, captionsAss, narratedImages);
+      bodyClips.push(narratedImages);
     }
+
+    // Final: video 0 (own audio) followed by the narrated, captioned body clips.
+    const finalClips = clip0 ? [clip0, ...bodyClips] : bodyClips;
+    await concatClips(finalClips, outFile, workDir);
     log("done: " + outFile);
     return outFile;
   } finally {
