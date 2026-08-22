@@ -3,7 +3,40 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { parseTimeToSeconds, parseTimestampsFile, kenBurnsFilter, findImageAsset } from "./manual-assemble.mjs";
+import { parseTimeToSeconds, parseTimestampsFile, kenBurnsFilter, findImageAsset, sceneMarkerIndex, parseScriptScenes } from "./manual-assemble.mjs";
+
+test("sceneMarkerIndex recognises SCENE/[n]/#n/n./bare-n markers and ignores prose", () => {
+  assert.equal(sceneMarkerIndex("SCENE 7"), 7);
+  assert.equal(sceneMarkerIndex("Scene 07 — THE BOARDROOM"), 7); // trailing title ignored
+  assert.equal(sceneMarkerIndex("[3]"), 3);
+  assert.equal(sceneMarkerIndex("#5"), 5);
+  assert.equal(sceneMarkerIndex("2."), 2);
+  assert.equal(sceneMarkerIndex("9"), 9);
+  assert.equal(sceneMarkerIndex("The scene was quiet."), null);
+  assert.equal(sceneMarkerIndex("He walked into the room."), null);
+});
+
+test("parseScriptScenes splits a script into per-scene narration by SCENE markers, dropping the marker/title lines", () => {
+  const doc = [
+    "SCENE 1", "The boardroom was silent.", "Everyone waited.", "",
+    "SCENE 2 — THREE WEEKS EARLIER", "It began with a letter.", "",
+    "SCENE 3", "She said no.",
+  ].join("\n");
+  assert.deepEqual(parseScriptScenes(doc), [
+    { index: 1, text: "The boardroom was silent.\nEveryone waited." },
+    { index: 2, text: "It began with a letter." },
+    { index: 3, text: "She said no." },
+  ]);
+});
+
+test("parseScriptScenes folds any text before the first marker into scene 1, and returns null when there are no markers", () => {
+  assert.equal(parseScriptScenes("Intro line.\nSCENE 1\nHello.")[0].text, "Intro line.\nHello.");
+  assert.equal(parseScriptScenes("Just a plain script.\nNo markers here at all."), null);
+});
+
+test("parseScriptScenes throws if a marked scene has no narration text beneath it", () => {
+  assert.throws(() => parseScriptScenes("SCENE 1\nSCENE 2\nonly two has text"), /SCENE 1 has no narration/);
+});
 
 test("parseTimeToSeconds understands M:SS, MM:SS and H:MM:SS", () => {
   assert.equal(parseTimeToSeconds("8"), 8);
