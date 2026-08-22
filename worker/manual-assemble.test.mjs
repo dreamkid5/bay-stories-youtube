@@ -70,6 +70,35 @@ test("parseTimestampsFile ignores a trailing note after the time range, never tr
   assert.deepEqual(entries, [{ index: 26, start: 70, end: 80 }]);
 });
 
+test("parseTimestampsFile connects a SCENE header to the time range on the NEXT line (numbers and ranges split across lines)", () => {
+  // The other common shot-list shape: "SCENE 07 — TITLE" on one line, "07:10 – 08:25"
+  // below it, with narration prose (including a stray "2:00 a.m.") in between.
+  const doc = [
+    "SCENE 01 — THE BOARDROOM REVEAL",
+    "00:00 – 01:15",
+    "Narration: the meeting opens.",
+    "",
+    "SCENE 02 — THREE WEEKS EARLIER",
+    "It was 2:00 a.m. when the letter arrived.",
+    "01:15 – 02:25",
+    "SCENE 03 — ELIAS AND HIS DAUGHTER",
+    "02:25 – 03:30",
+  ].join("\n");
+  assert.deepEqual(parseTimestampsFile(doc), [
+    { index: 1, start: 0, end: 75 },
+    { index: 2, start: 75, end: 145 },
+    { index: 3, start: 145, end: 210 },
+  ]);
+});
+
+test("parseTimestampsFile does not mistake a time-of-day line like '2:00 a.m.' for a botched entry", () => {
+  // Prior behavior threw "could not parse line" on this; it must simply be ignored.
+  assert.deepEqual(parseTimestampsFile("1: 0:00-0:10\n2:00 a.m. the phone rang\n2: 0:10-0:20"), [
+    { index: 1, start: 0, end: 10 },
+    { index: 2, start: 10, end: 20 },
+  ]);
+});
+
 test("parseTimestampsFile reads a full shot-list doc: keeps the SCENE cues, drops every prose/notes/header line", () => {
   // The exact shape of a real uploaded planning file: en-dash time ranges, image number
   // in a "SCENE NN" token, and paragraphs of narration notes and camera directions between.

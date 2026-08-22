@@ -51,11 +51,20 @@ ignoring everything else. It recognises two cue styles:
 00:00–01:00 — SCENE 01       ← a time range with the image number in "SCENE N"
 ```
 
-Dashes can be `-`, `–` or `—`. The image number comes from the leading `N:` or
-from a `SCENE N` / `IMAGE N` token. A time range with **no** image number (a
+The `SCENE N` label can even sit on the line **above** its time range —
+
+```
+SCENE 07 — PRESTON VALE ARRIVES
+07:10 – 08:25
+```
+
+— and the tool still connects the two. Dashes can be `-`, `–` or `—`. The image
+number comes from the leading `N:`, a `SCENE N` / `IMAGE N` token on the line, or
+a `SCENE N` header just above the range. A time range with **no** image number (a
 section sub-beat like `39:00–39:20 — THE FAMILY`) is skipped, so it never turns
-into a phantom extra image. The render log prints how many cues it kept and how
-many lines it ignored, so you can confirm it read what you intended.
+into a phantom extra image, and a time-of-day mention like `2:00 a.m.` in the
+prose is ignored too. The render log prints how many cues it kept and how many
+lines it ignored, so you can confirm it read what you intended.
 
 If your narration ends up a little longer or shorter than your timestamps add
 up to, the tool automatically rescales every image's timing by the same small

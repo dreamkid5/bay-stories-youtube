@@ -91,10 +91,16 @@ const TIME = "\\d{1,3}:\\d{2}(?::\\d{2})?";
 const RANGE_RE = new RegExp("(" + TIME + ")\\s*(?:-|–|—|~|→|to)\\s*(" + TIME + ")", "i");
 // An explicit image number written as SCENE/IMAGE/SHOT/SLIDE/FRAME/PIC N.
 const SCENE_RE = /\b(?:scene|image|img|shot|slide|frame|pic(?:ture)?)\s*#?\s*(\d{1,3})\b/i;
-// A line that plainly means to be a clean "N: start-end" entry: it starts with a number
-// then a COLON (not a "1." list bullet, not a bare time). Used only to decide whether a
-// line with NO parseable range is a typo worth shouting about vs. prose worth ignoring.
-const LOOKS_LIKE_CLEAN_ENTRY_RE = /^\s*\d{1,3}\s*:\s*\S/;
+// A line that plainly means to be a clean "N: start-end" entry: a number, a COLON, then
+// NON-digit text ("1: not-a-range"). The non-digit tail is what separates a real typo
+// from time-like prose such as "2:00 a.m." (digit after the colon) or a bare time cue —
+// those are left to be ignored, not shouted about. Used only to decide whether a line
+// with NO parseable range is a typo worth flagging vs. prose worth ignoring.
+const LOOKS_LIKE_CLEAN_ENTRY_RE = /^\s*\d{1,3}\s*:\s*\D/;
+// A line that is JUST a scene/image header with no time range of its own — e.g.
+// "SCENE 07 — PRESTON VALE ARRIVES" sitting on the line above its "07:10 – 08:25". Its
+// number is remembered and attached to the next range line that has no number of its own.
+const SCENE_HEADER_RE = /^\s*(?:scene|image|img|shot|slide|frame|pic(?:ture)?)\s*#?\s*(\d{1,3})\b/i;
 
 // Pull image cues out of a timestamps file that may ALSO contain a full shot list:
 // narration notes, camera directions, image descriptions, ACT headers, blank lines.
@@ -106,6 +112,7 @@ export function parseTimestampsFile(raw, log) {
   const note = typeof log === "function" ? log : () => {};
   const candidates = []; // { index: number|null, start, end }
   let ignoredProse = 0;
+  let pendingIndex = null; // a SCENE number seen on a header line, awaiting its range line
 
   for (const lineRaw of raw.split(/\r?\n/)) {
     const line = lineRaw.trim();
@@ -113,9 +120,13 @@ export function parseTimestampsFile(raw, log) {
 
     const r = line.match(RANGE_RE);
     if (!r) {
-      // No time range. If it looks like a botched clean entry ("1: not-a-range"), that is
-      // almost certainly a mistake the user wants flagged — losing it would drop an image
-      // silently. Everything else (prose, headers, "Image: Scene 3 — ...") is ignored.
+      // No time range on this line. A bare "SCENE 07 — ..." header remembers its number
+      // for the range line that follows it (shot lists that put the two on separate lines).
+      const header = line.match(SCENE_HEADER_RE);
+      if (header) { pendingIndex = Number(header[1]); continue; }
+      // A botched clean entry ("1: not-a-range") is almost certainly a mistake the user
+      // wants flagged — losing it would drop an image silently. Everything else (prose,
+      // descriptions, "Image: Scene 3 — ...") is ignored.
       if (LOOKS_LIKE_CLEAN_ENTRY_RE.test(line)) {
         throw new Error("timestamps.txt: could not parse line: " + JSON.stringify(lineRaw));
       }
@@ -130,8 +141,9 @@ export function parseTimestampsFile(raw, log) {
         ") has an end time at or before its start time");
     }
 
-    // Image number: prefer a leading "N:" written before the range, else a SCENE/IMAGE
-    // token anywhere on the line, else leave it unnumbered for now.
+    // Image number, in order of preference: a leading "N:" written before the range, a
+    // SCENE/IMAGE token on the same line, or the number remembered from a header line
+    // just above. Otherwise leave it unnumbered for now.
     let index = null;
     const before = line.slice(0, r.index);
     const lead = before.match(/(\d{1,3})\s*[:.]?\s*$/);
@@ -140,6 +152,8 @@ export function parseTimestampsFile(raw, log) {
       const scene = line.match(SCENE_RE);
       if (scene) index = Number(scene[1]);
     }
+    if (index == null && pendingIndex != null) index = pendingIndex;
+    pendingIndex = null; // each range line consumes (or supersedes) a pending header
     candidates.push({ index, start, end });
   }
 
