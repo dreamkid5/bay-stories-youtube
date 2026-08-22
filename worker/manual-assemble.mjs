@@ -10,10 +10,10 @@
 //   0.<ext>          the intro video clip; keeps its own audio; plays before narration
 //   1.<ext>          image 1 (jpg/png/webp)
 //   2.<ext>          image 2
-//   26a.<ext>        FACE-OFF: name a slot's image "<N>a" and "<N>b" (also accepted:
-//   26b.<ext>        "26 a", "26(a)", "26 (a)") to combine them into one split-screen
-//                    frame for that slot instead of two separate images.
-//   ... etc, one file (or a/b pair) per line in timestamps.txt
+//   26a.<ext>        SPLIT: letter a slot's images "<N>a".."<N>d" (also accepted:
+//   26b.<ext>        "26 a", "26(a)", "26 (a)") to tile 2-4 images into one frame for
+//                    that slot: 2 = side-by-side face-off, 3 = a row, 4 = a 2x2 grid.
+//   ... etc, one file (or a lettered 2-4 split) per line in timestamps.txt
 //   script.txt       the full narration text, read start to finish
 //   timestamps.txt   one line per image: "1: 0:08-0:45"
 //                    times are relative to when narration STARTS (0:00 = the instant
@@ -242,19 +242,39 @@ export async function findImageAsset(folder, index, exts) {
     .filter((e) => e && exts.includes(e.ext));
 
   const solo = parsed.find((e) => e.base === String(index));
-  const pairRe = new RegExp("^" + index + "\\s*\\(?([ab])\\)?$", "i");
-  const a = parsed.find((e) => { const m = e.base.match(pairRe); return m && m[1].toLowerCase() === "a"; });
-  const b = parsed.find((e) => { const m = e.base.match(pairRe); return m && m[1].toLowerCase() === "b"; });
 
-  if (solo && (a || b)) {
-    throw new Error("image " + index + " has both a solo file (" + solo.full + ") and a paired a/b file; use one or the other, not both");
+  // A slot can be split across 2-4 images lettered a, b, c, d (a face-off is just the
+  // 2-image case). "30a", "30 a", "30(a)", "30 (a)" all count; letters are case-insensitive.
+  const SPLIT_LETTERS = ["a", "b", "c", "d"];
+  const letterRe = new RegExp("^" + index + "\\s*\\(?([a-d])\\)?$", "i");
+  const byLetter = new Map();
+  for (const e of parsed) {
+    const m = e.base.match(letterRe);
+    if (m) byLetter.set(m[1].toLowerCase(), e.full);
   }
-  if (a || b) {
-    if (!a || !b) {
+
+  if (solo && byLetter.size) {
+    throw new Error("image " + index + " has both a solo file (" + solo.full + ") and a lettered split file; use one or the other, not both");
+  }
+  if (byLetter.size) {
+    if (byLetter.size === 1) {
+      const only = [...byLetter.values()][0];
       throw new Error("image " + index + " has only one half of a face-off pair (" +
-        (a ? a.full : b.full) + "); both " + index + "a and " + index + "b are required");
+        only + "); both " + index + "a and " + index + "b are required");
     }
-    return { type: "pair", pathA: path.join(folder, a.full), pathB: path.join(folder, b.full) };
+    // The letters used must run consecutively from 'a' (a,b or a,b,c or a,b,c,d) — a gap
+    // like a+c means the missing image would silently vanish, so it's flagged instead.
+    const need = SPLIT_LETTERS.slice(0, byLetter.size);
+    const missing = need.find((l) => !byLetter.has(l));
+    if (missing) {
+      throw new Error("image " + index + " uses split letters " +
+        [...byLetter.keys()].sort().join(", ") + " but " + index + missing +
+        " is missing; letter the split images consecutively from a (a, b, c, d)");
+    }
+    const paths = need.map((l) => path.join(folder, byLetter.get(l)));
+    // Keep pathA/pathB on the 2-image case so existing callers/tests still read a "pair".
+    if (paths.length === 2) return { type: "pair", pathA: paths[0], pathB: paths[1], paths };
+    return { type: "group", paths };
   }
   if (solo) return { type: "single", path: path.join(folder, solo.full) };
   return null;
@@ -320,20 +340,40 @@ async function buildImageClip(imagePath, durationSec, index, outPath, width, hei
   ]);
 }
 
-// A face-off clip: image A fills the left half, image B fills the right half, hstacked
-// into one widthxheight frame, then that COMBINED frame gets the same alternating zoom
-// as a solo image (and the same dip-to-black) so a pair never looks static either.
-async function buildFaceOffClip(imageAPath, imageBPath, durationSec, index, outPath, width, height, zoomFraction) {
-  const leftW = Math.floor(width / 2);
-  const rightW = width - leftW;
-  const filter =
-    "[0:v]" + fitFrame(leftW, height) + "[L];" +
-    "[1:v]" + fitFrame(rightW, height) + "[R];" +
-    "[L][R]hstack=inputs=2[combined];" +
-    "[combined]" + zoomOnly(durationSec, index, width, height, zoomFraction) + dipToBlackVideo(durationSec) + "[out]";
+// Lays out 2-4 images tiled into ONE widthxheight frame: 2 side by side (the classic
+// face-off), 3 in a row, 4 in a 2x2 grid. Each cell is scale+cropped to fill exactly,
+// then the COMBINED frame gets the same alternating zoom and dip-to-black as a solo image
+// so a split never looks static either. Returns the cell filters + the label of the tiled
+// frame, so the caller only appends the shared zoom/dip.
+function splitLayout(count, width, height) {
+  const cells = []; // { w, h } per input, in order
+  let tile;
+  if (count === 2) {
+    const lw = Math.floor(width / 2);
+    cells.push({ w: lw, h: height }, { w: width - lw, h: height });
+    tile = "[c0][c1]hstack=inputs=2[grid];";
+  } else if (count === 3) {
+    const w = Math.floor(width / 3);
+    cells.push({ w, h: height }, { w, h: height }, { w: width - 2 * w, h: height });
+    tile = "[c0][c1][c2]hstack=inputs=3[grid];";
+  } else {
+    const lw = Math.floor(width / 2), rw = width - lw;
+    const th = Math.floor(height / 2), bh = height - th;
+    cells.push({ w: lw, h: th }, { w: rw, h: th }, { w: lw, h: bh }, { w: rw, h: bh });
+    tile = "[c0][c1]hstack=inputs=2[top];[c2][c3]hstack=inputs=2[bot];[top][bot]vstack=inputs=2[grid];";
+  }
+  const cellFilters = cells.map((c, i) => "[" + i + ":v]" + fitFrame(c.w, c.h) + "[c" + i + "];").join("");
+  return cellFilters + tile;
+}
+
+async function buildSplitClip(paths, durationSec, index, outPath, width, height, zoomFraction) {
+  const count = paths.length; // 2, 3, or 4
+  const filter = splitLayout(count, width, height) +
+    "[grid]" + zoomOnly(durationSec, index, width, height, zoomFraction) + dipToBlackVideo(durationSec) + "[out]";
+  const inputs = [];
+  for (const p of paths) inputs.push("-loop", "1", "-t", String(durationSec), "-i", p);
   await run(FFMPEG, [
-    "-y", "-loop", "1", "-t", String(durationSec), "-i", imageAPath,
-    "-loop", "1", "-t", String(durationSec), "-i", imageBPath,
+    "-y", ...inputs,
     "-filter_complex", filter, "-map", "[out]",
     "-r", "30", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
     "-pix_fmt", "yuv420p", "-an", outPath
@@ -433,10 +473,12 @@ export async function assembleManualVideo(folder, outFile, opts = {}) {
       const dur = im.end - im.start;
       const p = path.join(workDir, "img" + im.index + ".mp4");
       const zoomWord = i % 2 === 0 ? "zoom in" : "zoom out";
-      if (im.asset.type === "pair") {
-        await buildFaceOffClip(im.asset.pathA, im.asset.pathB, dur, i, p, width, height, zoomFraction);
-        log("image " + im.index + ": " + dur.toFixed(1) + "s FACE-OFF (" +
-          path.basename(im.asset.pathA) + " vs " + path.basename(im.asset.pathB) + ", " + zoomWord + ")");
+      if (im.asset.type === "pair" || im.asset.type === "group") {
+        await buildSplitClip(im.asset.paths, dur, i, p, width, height, zoomFraction);
+        const names = im.asset.paths.map((x) => path.basename(x));
+        const label = im.asset.paths.length === 2 ? "FACE-OFF" : im.asset.paths.length + "-UP SPLIT";
+        log("image " + im.index + ": " + dur.toFixed(1) + "s " + label + " (" +
+          names.join(" | ") + ", " + zoomWord + ")");
       } else {
         await buildImageClip(im.asset.path, dur, i, p, width, height, zoomFraction);
         log("image " + im.index + ": " + dur.toFixed(1) + "s (" + zoomWord + ")");

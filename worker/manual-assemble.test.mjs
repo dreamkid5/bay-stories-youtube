@@ -162,6 +162,42 @@ test("findImageAsset also accepts '26 (a)' / '26 (b)' spacing and parens", async
   }
 });
 
+test("findImageAsset tiles 3 lettered images (a,b,c) into one split group, in order", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "griot-manual-asset-"));
+  try {
+    for (const n of ["7a.jpg", "7b.jpg", "7c.jpg"]) await fs.writeFile(path.join(dir, n), "x");
+    const asset = await findImageAsset(dir, 7, [".jpg"]);
+    assert.equal(asset.type, "group");
+    assert.deepEqual(asset.paths.map((p) => path.basename(p)), ["7a.jpg", "7b.jpg", "7c.jpg"]);
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("findImageAsset tiles 4 lettered images '30 (a..d)' into one split group, in a,b,c,d order", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "griot-manual-asset-"));
+  try {
+    for (const l of ["a", "b", "c", "d"]) await fs.writeFile(path.join(dir, "30 (" + l + ").jpeg"), "x");
+    const asset = await findImageAsset(dir, 30, [".jpeg"]);
+    assert.equal(asset.type, "group");
+    assert.deepEqual(asset.paths.map((p) => path.basename(p)),
+      ["30 (a).jpeg", "30 (b).jpeg", "30 (c).jpeg", "30 (d).jpeg"]);
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("findImageAsset rejects a gap in the split letters (a + c, no b) instead of dropping an image", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "griot-manual-asset-"));
+  try {
+    await fs.writeFile(path.join(dir, "9a.jpg"), "x");
+    await fs.writeFile(path.join(dir, "9c.jpg"), "x");
+    await assert.rejects(findImageAsset(dir, 9, [".jpg"]), /9b is missing|consecutively/);
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("findImageAsset throws a clear error when only one half of a pair exists", async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "griot-manual-asset-"));
   try {
