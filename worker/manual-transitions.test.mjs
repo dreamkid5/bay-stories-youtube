@@ -40,13 +40,20 @@ test("dipToBlackAudio mirrors the same fade timing with afade", () => {
   assert.match(af, /^,afade=t=in:st=0:d=0\.200,afade=t=out:st=5\.800:d=0\.200$/);
 });
 
-test("buildImageClip, buildFaceOffClip, and video 0 all get their own dip-to-black, and video 0's duration is probed before it is re-encoded", async () => {
+test("buildImageClip, buildSplitClip, and video 0 all get their own dip-to-black, and video 0's duration is probed before it is re-encoded", async () => {
   const source = await fs.readFile(new URL("./manual-assemble.mjs", import.meta.url), "utf8");
   assert.match(source, /kenBurnsFilter\([^)]*\) \+ dipToBlackVideo\(durationSec\)/); // buildImageClip
-  assert.match(source, /zoomOnly\([^)]*\) \+ dipToBlackVideo\(durationSec\) \+ "\[out\]"/); // buildFaceOffClip
+  assert.match(source, /zoomOnly\([^)]*\) \+ dipToBlackVideo\(durationSec\) \+ "\[out\]"/); // buildSplitClip (tiled frame)
   assert.match(source, /dipToBlackAudio\(durationSec\)/); // video 0's own audio dip
   assert.match(source, /const sourceClip0Duration = await probeDuration\(videoZero\);/);
   assert.match(source, /normalizeVideoClip\(videoZero, clip0, width, height, sourceClip0Duration\)/);
+});
+
+test("split layout tiles 2/3/4 images: 2 = hstack, 3 = hstack of 3, 4 = 2x2 (two hstacks + a vstack)", async () => {
+  const source = await fs.readFile(new URL("./manual-assemble.mjs", import.meta.url), "utf8");
+  assert.match(source, /hstack=inputs=2\[grid\]/);   // 2-up
+  assert.match(source, /hstack=inputs=3\[grid\]/);   // 3-up
+  assert.match(source, /hstack=inputs=2\[top\];\[c2\]\[c3\]hstack=inputs=2\[bot\];\[top\]\[bot\]vstack=inputs=2\[grid\]/); // 4-up grid
 });
 
 test("video 0 is OPTIONAL: no throw when absent, its build is guarded, and the final concat drops it", async () => {

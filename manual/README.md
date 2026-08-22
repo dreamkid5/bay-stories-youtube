@@ -17,7 +17,7 @@ Example: `manual/my-fiance-story/`
 |---|---|
 | `0.mp4` | **Optional** intro video clip. Keeps **its own sound**. Plays first, before the narration starts. Leave it out and the video simply starts on image 1. |
 | `1.jpg`, `2.jpg`, `3.jpg` ... | Images shown in order (after video 0 if you included one), each held on screen for the time you set in `timestamps.txt`, with a slow zoom in/out. |
-| `26a.jpg` + `26b.jpg` | Optional: two images sharing the same number (`a`/`b`) become **one face-off split-screen** for that slot instead of two separate images. (`26 a`, `26(a)`, `26 (a)` also work.) |
+| `26 (a).jpg` + `26 (b).jpg` (+ `(c)`, `(d)`) | Optional: letter **2–4 images** with the same number to tile them into **one frame** for that slot instead of separate images — **2** = side-by-side face-off, **3** = a row, **4** = a 2×2 grid. Letters must run `a, b, c, d` with no gaps. (`26a`, `26 a`, `26(a)`, `26 (a)` all work.) In `timestamps.txt` you still reference the slot by its number **once**. |
 | `script.txt` | The full narration text, read start to finish in the channel's locked voice. |
 | `timestamps.txt` | When each image appears on screen — see below. |
 | `title.txt` | Optional. The YouTube title. If missing, the title comes from the folder name. |
