@@ -60,10 +60,11 @@ test("video 0 is OPTIONAL: no throw when absent, its build is guarded, and the f
   const source = await fs.readFile(new URL("./manual-assemble.mjs", import.meta.url), "utf8");
   // No hard failure when a folder has no 0.<ext>.
   assert.doesNotMatch(source, /throw new Error\("no video named 0/);
-  // Both the normalize step and the final concat are conditional on clip0 existing.
+  // The normalize step is guarded on the video existing, and the final concat prepends
+  // clip0 only when it exists, otherwise the body clips are the whole video.
   assert.match(source, /if \(videoZero\) \{/);
-  assert.match(source, /if \(clip0\) \{\s*\n\s*await concatClips\(\[clip0, narratedImages\]/);
-  assert.match(source, /await concatClips\(\[narratedImages\], outFile, workDir\);/);
+  assert.match(source, /const finalClips = clip0 \? \[clip0, \.\.\.bodyClips\] : bodyClips;/);
+  assert.match(source, /await concatClips\(finalClips, outFile, workDir\);/);
 });
 
 test("reconcileImageTimingToNarration reproduces and fixes the real production failure: a 39-scene, 40-minute video where narration runs 83s short and the LAST scene is only 32s", () => {

@@ -16,51 +16,61 @@ Example: `manual/my-fiance-story/`
 | File | What it is |
 |---|---|
 | `0.mp4` | **Optional** intro video clip. Keeps **its own sound**. Plays first, before the narration starts. Leave it out and the video simply starts on image 1. |
-| `1.jpg`, `2.jpg`, `3.jpg` ... | Images shown in order (after video 0 if you included one), each held on screen for the time you set in `timestamps.txt`, with a slow zoom in/out. |
-| `26 (a).jpg` + `26 (b).jpg` (+ `(c)`, `(d)`) | Optional: letter **2–4 images** with the same number to tile them into **one frame** for that slot instead of separate images — **2** = side-by-side face-off, **3** = a row, **4** = a 2×2 grid. Letters must run `a, b, c, d` with no gaps. (`26a`, `26 a`, `26(a)`, `26 (a)` all work.) In `timestamps.txt` you still reference the slot by its number **once**. |
-| `script.txt` | The full narration text, read start to finish in the channel's locked voice. |
-| `timestamps.txt` | When each image appears on screen — see below. |
+| `1.jpg`, `2.jpg`, `3.jpg` ... | Images shown in order (after video 0 if you included one), one per scene, each with a slow zoom in/out. |
+| `26 (a).jpg` + `26 (b).jpg` (+ `(c)`, `(d)`) | Optional: letter **2–4 images** with the same number to tile them into **one frame** for that scene instead of separate images — **2** = side-by-side face-off, **3** = a row, **4** = a 2×2 grid. Letters must run `a, b, c, d` with no gaps. (`26a`, `26 a`, `26(a)`, `26 (a)` all work.) You reference the scene by its number **once**. |
+| `script.txt` | The narration, read in the channel's locked voice. **Recommended:** put a `SCENE N` line before each scene's narration — then each image is shown for exactly as long as its own narration, so picture and voice stay perfectly in sync (see below). |
+| `timestamps.txt` | **Only needed if your `script.txt` has no `SCENE` markers.** Sets when each image appears — see the fallback section below. |
 | `title.txt` | Optional. The YouTube title. If missing, the title comes from the folder name. |
 
-## 3. Write timestamps.txt
+## 3. Write script.txt with `SCENE` markers (recommended — perfect sync)
 
-One line per image number, `start-end`, **relative to when the narration
-starts** (0:00 = the exact instant video 0 ends, or the very start of the video
-if you have no video 0):
+Put a **`SCENE N` line** before each scene's narration. Image `N` is then shown
+for **exactly as long as scene N's narration takes to speak** — so the picture
+always matches the words, with no drift:
+
+```
+SCENE 1
+The night I met Sergeant Cole Radley, I was parked on the shoulder of Route 9...
+
+SCENE 2
+I want to tell you the whole thing from the beginning...
+
+SCENE 3
+My name is Desmond Wills. I am forty-one years old...
+```
+
+- `SCENE 1`, `SCENE 2`, ... map to images `1`, `2`, ... (a scene using a
+  `(a)/(b)` split still maps to that one number).
+- The `SCENE N` line is **not** read aloud — only the narration beneath it is. A
+  title on the same line (`SCENE 2 — THREE WEEKS EARLIER`) is fine and ignored.
+- `SCENE 7`, `Scene 7`, `[7]`, `#7`, `7.` and a bare `7` on its own line all work.
+- **When you use `SCENE` markers you do NOT need `timestamps.txt` at all** — the
+  narration sets every image's timing automatically.
+
+That's the whole trick to a professional, in-sync video: let the voice decide how
+long each picture stays.
+
+## 3b. Fallback: timestamps.txt (only if your script has no `SCENE` markers)
+
+If you'd rather not mark scenes, you can instead give a `timestamps.txt` with one
+line per image, `start-end`:
 
 ```
 1: 0:00-0:12
 2: 0:12-0:40
-26: 0:40-0:55
+26: 0:40-0:55 she opens the door   ← trailing note is ignored
 ```
 
-You can add a note after the time range for your own reference — it's ignored,
-never treated as narration:
+You can paste a full shot list here — ACT headers, narration notes, camera
+directions, blank lines — and the tool pulls out only the timing cues. It reads
+`1: 0:00-1:00`, or a `SCENE N` number next to (or on the line above) a
+`00:00–01:00` range; dashes can be `-`, `–` or `—`; a time-of-day like
+`2:00 a.m.` is ignored.
 
-```
-26: 0:40-0:55 she opens the door and finds him there
-```
-
-**You don't have to strip your file down to just those lines.** You can paste a
-full shot list — ACT headers, narration notes, camera directions, image
-descriptions and blank lines — and the tool pulls out only the timing cues,
-ignoring everything else. It recognises two cue styles:
-
-```
-1: 0:00-1:00                 ← "number: start-end"
-00:00–01:00 — SCENE 01       ← a time range with the image number in "SCENE N"
-```
-
-Dashes can be `-`, `–` or `—`. The image number comes from the leading `N:` or
-from a `SCENE N` / `IMAGE N` token. A time range with **no** image number (a
-section sub-beat like `39:00–39:20 — THE FAMILY`) is skipped, so it never turns
-into a phantom extra image. The render log prints how many cues it kept and how
-many lines it ignored, so you can confirm it read what you intended.
-
-If your narration ends up a little longer or shorter than your timestamps add
-up to, the tool automatically rescales every image's timing by the same small
-percentage (not just the last one), so relative pacing is preserved and
-picture and voice always finish together.
+⚠️ **This mode is less accurate.** Your times are estimates, so wherever a scene's
+real narration is longer or shorter than you guessed, the picture drifts from the
+voice — and it adds up over a long video. The tool rescales everything to finish
+together, but only `SCENE` markers give true per-scene sync. Prefer section 3.
 
 ## 4. Upload it — directly on GitHub, no terminal needed
 

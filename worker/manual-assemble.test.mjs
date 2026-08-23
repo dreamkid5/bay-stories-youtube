@@ -3,7 +3,40 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { parseTimeToSeconds, parseTimestampsFile, kenBurnsFilter, findImageAsset } from "./manual-assemble.mjs";
+import { parseTimeToSeconds, parseTimestampsFile, kenBurnsFilter, findImageAsset, sceneMarkerIndex, parseScriptScenes } from "./manual-assemble.mjs";
+
+test("sceneMarkerIndex recognises SCENE/[n]/#n/n./bare-n markers and ignores prose", () => {
+  assert.equal(sceneMarkerIndex("SCENE 7"), 7);
+  assert.equal(sceneMarkerIndex("Scene 07 — THE BOARDROOM"), 7); // trailing title ignored
+  assert.equal(sceneMarkerIndex("[3]"), 3);
+  assert.equal(sceneMarkerIndex("#5"), 5);
+  assert.equal(sceneMarkerIndex("2."), 2);
+  assert.equal(sceneMarkerIndex("9"), 9);
+  assert.equal(sceneMarkerIndex("The scene was quiet."), null);
+  assert.equal(sceneMarkerIndex("He walked into the room."), null);
+});
+
+test("parseScriptScenes splits a script into per-scene narration by SCENE markers, dropping the marker/title lines", () => {
+  const doc = [
+    "SCENE 1", "The boardroom was silent.", "Everyone waited.", "",
+    "SCENE 2 — THREE WEEKS EARLIER", "It began with a letter.", "",
+    "SCENE 3", "She said no.",
+  ].join("\n");
+  assert.deepEqual(parseScriptScenes(doc), [
+    { index: 1, text: "The boardroom was silent.\nEveryone waited." },
+    { index: 2, text: "It began with a letter." },
+    { index: 3, text: "She said no." },
+  ]);
+});
+
+test("parseScriptScenes folds any text before the first marker into scene 1, and returns null when there are no markers", () => {
+  assert.equal(parseScriptScenes("Intro line.\nSCENE 1\nHello.")[0].text, "Intro line.\nHello.");
+  assert.equal(parseScriptScenes("Just a plain script.\nNo markers here at all."), null);
+});
+
+test("parseScriptScenes throws if a marked scene has no narration text beneath it", () => {
+  assert.throws(() => parseScriptScenes("SCENE 1\nSCENE 2\nonly two has text"), /SCENE 1 has no narration/);
+});
 
 test("parseTimeToSeconds understands M:SS, MM:SS and H:MM:SS", () => {
   assert.equal(parseTimeToSeconds("8"), 8);
@@ -68,6 +101,35 @@ test("kenBurns scales the zoom to the image's OWN duration, so a long-held image
 test("parseTimestampsFile ignores a trailing note after the time range, never treating it as narration", () => {
   const entries = parseTimestampsFile("26: 1:10-1:20 she opens the door and finds him there");
   assert.deepEqual(entries, [{ index: 26, start: 70, end: 80 }]);
+});
+
+test("parseTimestampsFile connects a SCENE header to the time range on the NEXT line (numbers and ranges split across lines)", () => {
+  // The other common shot-list shape: "SCENE 07 — TITLE" on one line, "07:10 – 08:25"
+  // below it, with narration prose (including a stray "2:00 a.m.") in between.
+  const doc = [
+    "SCENE 01 — THE BOARDROOM REVEAL",
+    "00:00 – 01:15",
+    "Narration: the meeting opens.",
+    "",
+    "SCENE 02 — THREE WEEKS EARLIER",
+    "It was 2:00 a.m. when the letter arrived.",
+    "01:15 – 02:25",
+    "SCENE 03 — ELIAS AND HIS DAUGHTER",
+    "02:25 – 03:30",
+  ].join("\n");
+  assert.deepEqual(parseTimestampsFile(doc), [
+    { index: 1, start: 0, end: 75 },
+    { index: 2, start: 75, end: 145 },
+    { index: 3, start: 145, end: 210 },
+  ]);
+});
+
+test("parseTimestampsFile does not mistake a time-of-day line like '2:00 a.m.' for a botched entry", () => {
+  // Prior behavior threw "could not parse line" on this; it must simply be ignored.
+  assert.deepEqual(parseTimestampsFile("1: 0:00-0:10\n2:00 a.m. the phone rang\n2: 0:10-0:20"), [
+    { index: 1, start: 0, end: 10 },
+    { index: 2, start: 10, end: 20 },
+  ]);
 });
 
 test("parseTimestampsFile reads a full shot-list doc: keeps the SCENE cues, drops every prose/notes/header line", () => {
