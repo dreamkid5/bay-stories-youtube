@@ -301,12 +301,19 @@ export async function findImageAsset(folder, index, exts) {
     })
     .filter((e) => e && exts.includes(e.ext));
 
-  const solo = parsed.find((e) => e.base === String(index));
+  // Images may be named as a plain number ("7.jpg") OR with a friendly prefix that mirrors
+  // the SCENE markers in the script ("Scene 7.jpg", "Image 7.png", "Shot 7.jpg") — people
+  // naturally name their exported files that way, so accept both. The optional prefix is
+  // case-insensitive and may carry a "#" or spaces.
+  const PFX = "(?:(?:scene|image|img|shot|slide|frame|pic(?:ture)?)\\s*#?\\s*)?";
+  const soloRe = new RegExp("^" + PFX + index + "$", "i");
+  const solo = parsed.find((e) => soloRe.test(e.base));
 
   // A slot can be split across 2-4 images lettered a, b, c, d (a face-off is just the
-  // 2-image case). "30a", "30 a", "30(a)", "30 (a)" all count; letters are case-insensitive.
+  // 2-image case). "30a", "30 a", "30(a)", "30 (a)", "Scene 30 (a)" all count; letters
+  // are case-insensitive.
   const SPLIT_LETTERS = ["a", "b", "c", "d"];
-  const letterRe = new RegExp("^" + index + "\\s*\\(?([a-d])\\)?$", "i");
+  const letterRe = new RegExp("^" + PFX + index + "\\s*\\(?([a-d])\\)?$", "i");
   const byLetter = new Map();
   for (const e of parsed) {
     const m = e.base.match(letterRe);
