@@ -16,7 +16,7 @@ Example: `manual/my-fiance-story/`
 | File | What it is |
 |---|---|
 | `0.mp4` | **Optional** intro video clip. Keeps **its own sound**. Plays first, before the narration starts. Leave it out and the video simply starts on image 1. |
-| `1.jpg`, `2.jpg`, `3.jpg` ... | Images shown in order (after video 0 if you included one), one per scene, each with a slow zoom in/out. |
+| `1.jpg`, `2.jpg`, `3.jpg` ... (or `Scene 1.jpg`, `Scene 2.jpg` ...) | Images shown in order (after video 0 if you included one), one per scene, each with a slow zoom in/out. Name each by its number — a `Scene N` / `Image N` prefix is also accepted, so `Scene 1.jpg` = image 1. |
 | `26 (a).jpg` + `26 (b).jpg` (+ `(c)`, `(d)`) | Optional: letter **2–4 images** with the same number to tile them into **one frame** for that scene instead of separate images — **2** = side-by-side face-off, **3** = a row, **4** = a 2×2 grid. Letters must run `a, b, c, d` with no gaps. (`26a`, `26 a`, `26(a)`, `26 (a)` all work.) You reference the scene by its number **once**. |
 | `script.txt` | The narration, read in the channel's locked voice. **Recommended:** put a `SCENE N` line before each scene's narration — then each image is shown for exactly as long as its own narration, so picture and voice stay perfectly in sync (see below). |
 | `timestamps.txt` | **Only needed if your `script.txt` has no `SCENE` markers.** Sets when each image appears — see the fallback section below. |

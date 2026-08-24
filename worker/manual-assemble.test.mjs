@@ -198,6 +198,22 @@ test("findImageAsset finds a plain solo image by index", async () => {
   }
 });
 
+test("findImageAsset accepts a 'Scene N' / 'Image N' filename prefix, without colliding across numbers", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "griot-manual-asset-"));
+  try {
+    await fs.writeFile(path.join(dir, "Scene 1.jpeg"), "x");
+    await fs.writeFile(path.join(dir, "Scene 11.jpeg"), "x");
+    await fs.writeFile(path.join(dir, "Image 3.png"), "x");
+    const one = await findImageAsset(dir, 1, [".jpeg", ".png"]);
+    assert.equal(one.type, "single");
+    assert.equal(one.path, path.join(dir, "Scene 1.jpeg")); // must NOT grab "Scene 11.jpeg"
+    assert.equal((await findImageAsset(dir, 11, [".jpeg"])).path, path.join(dir, "Scene 11.jpeg"));
+    assert.equal((await findImageAsset(dir, 3, [".png"])).path, path.join(dir, "Image 3.png"));
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("findImageAsset combines '26a' + '26b' into a face-off pair", async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "griot-manual-asset-"));
   try {
